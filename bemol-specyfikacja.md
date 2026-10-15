@@ -2,7 +2,7 @@
 
 > **BEMOL**: *Boundless Efficient Machine-Oriented Language*
 > Repozytorium: `github.com/bemol-lang/bemol` · rozszerzenie plików: `.bmol`
-> Status: **szkic roboczy** · ostatnia aktualizacja: 2026-10-15
+> Status: **szkic roboczy** · ostatnia aktualizacja: 2026-10-16
 
 BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. Daje dostęp do pamięci z precyzją asemblera (każdy bajt, każdy bit), ale z czytelną składnią i automatycznym zarządzaniem pamięcią.
 
@@ -26,8 +26,9 @@ BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. D
 12. [Wyjście poza blok: `.rangeError`](#12-wyjście-poza-blok-rangeerror)
 13. [Literały](#13-literały)
 14. [Zestawienie operacji na `pointer`](#14-zestawienie-operacji-na-pointer)
-15. [Przykładowy program](#15-przykładowy-program)
-16. [Otwarte pytania](#16-otwarte-pytania)
+15. [Wymagane optymalizacje kompilatora](#15-wymagane-optymalizacje-kompilatora)
+16. [Przykładowy program](#16-przykładowy-program)
+17. [Otwarte pytania](#17-otwarte-pytania)
 
 ---
 
@@ -44,6 +45,13 @@ BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. D
 **Kolejność bajtów: little-endian.** Bajt 0 jest najmniej znaczący. Blok czytamy jak zapis binarny, „od prawej do lewej”. To naturalny porządek procesorów x86 i ARM.
 
 **Indeksowanie od zera.**
+
+**Bezpiecznie w debug, szybko w buildzie finalnym.** Kontrole i pomoce (wzory pamięci, ostrzeżenia, `HALT`) można włączać na czas rozwijania programu, a w finalnej kompilacji świadomie wyłączyć tam, gdzie liczy się każdy cykl. Nic kosztownego nie dzieje się bez wiedzy programisty.
+
+### Tryby kompilacji
+
+- **Kompilacja testowa (debug):** szybkie kompilacje cząstkowe do uruchamiania i testowania programu.
+- **Kompilacja finalna (final build):** połączenie wszystkich elementów w całość z pełną optymalizacją.
 
 ---
 
@@ -189,14 +197,58 @@ Gdy zmienna `pointer` dostaje nowy blok (np. `glb = mojaFunkcja()`), `.shares` j
 
 **Rejestruje zmienną w menedżerze pamięci** i przydziela pierwszy blok. Można jej użyć **tylko raz w życiu zmiennej**. Rozmiar podaje się w bajtach lub jako `ilość*typ`.
 
+**`.new` nie zeruje bloku.** Zawartość nowego bloku jest nieokreślona (chyba że włączono wzór pamięci, patrz niżej).
+
 ```
 ptr.new[1024]
 ptr.new[100*int]
+ptr.clear                  # jawne zerowanie, gdy jest potrzebne
 ```
 
 ### `.update` — zmiana rozmiaru
 
-Zmienia rozmiar bloku, **zachowując istniejące dane**. Nowo dodane bajty są **zerowane**. Po `.release` przydziela nowy, wyzerowany blok.
+Zmienia rozmiar bloku, **zachowując istniejące dane**. **Nowo dodane bajty nie są zerowane**: ich zawartość jest nieokreślona. Po `.release` przydziela nowy blok o nieokreślonej zawartości.
+
+Powód: przy bardzo dużych blokach zerowanie to kosztowna operacja, często zbędna, bo programista i tak zaraz wypełni blok własnymi danymi. Kto potrzebuje zer, mówi to jawnie:
+
+```
+stary as longint = ptr.length
+ptr.update[2048]
+ptr.window[stary:ptr.length-stary].clear    # zeruje tylko nowo dodaną część
+```
+
+### Wzory pamięci (pomoc przy szukaniu błędów)
+
+Odczyt bajtów, których program nigdy nie zapisał, to klasyczny, trudny do znalezienia błąd. Żeby go wychwycić, nowe bajty (przy `.new` i przy powiększeniu przez `.update`) można automatycznie wypełniać rozpoznawalnym wzorem. Jeśli w danych pojawią się wartości `CDCDCDCD`, od razu widać, że program czyta coś, czego nie zapisał.
+
+Wzory są **osobne dla kompilacji testowej i finalnej** i **oba są domyślnie wyłączone**, żeby nawet podczas rozwijania programu nie wpływały na wydajność. Programista musi je świadomie włączyć.
+
+**Ustawienia dla całego programu:**
+
+```
+DEFAULT_MEMORY_PATTERN_DEBUG = ON          # domyślnie OFF
+DEFAULT_MEMORY_PATTERN_PRODUCTION = ON     # domyślnie OFF
+
+MEMORY_PATTERN_DEBUG_BYTE = &CDh           # domyślnie &CDh
+MEMORY_PATTERN_PRODUCTION_BYTE = &00h      # domyślnie &00h
+```
+
+- **wzór debug** (`&CDh`) służy do rozpoznawania niezapisanych danych podczas testów,
+- **wzór produkcyjny** (`&00h`) służy bezpieczeństwu w gotowym programie: nowy blok nie zawiera resztek poprzednich danych (np. haseł).
+
+**Ustawienia dla konkretnej zmiennej** (nadpisują domyślne):
+
+```
+ptr.memoryPatternDebug = ON
+ptr.memoryPatternProduction = OFF
+```
+
+**Działanie:** przy `.new` menedżer odczytuje ustawienia domyślne programu i zapisuje je w flagach wpisu (bity 6 i 7, sekcja 6). Ustawienie lokalne nadpisuje domyślne:
+
+- ustawione **przed `.new`**: kompilator je zapamiętuje i stosuje przy rejestracji,
+- ustawione **po `.new`**: działa przy kolejnym `.update`.
+
+**Bajt wzoru jest jeden dla całego programu.** We flagach wpisu jest miejsce tylko na włączone/wyłączone, więc pojedyncza zmienna może jedynie włączyć lub wyłączyć wypełnianie.
 
 ### `.release` — zwolnienie pamięci
 
@@ -222,7 +274,7 @@ przetwarzaj.end
 
 **Na końcu funkcji sprawdzane jest `.shares` bloku `PERSISTENT`:**
 
-- **0**: blok był używany tylko w funkcji, wpis jest zerowany i czeka na kolejne wywołanie,
+- **0**: blok był używany tylko w funkcji, wpis jest czyszczony (shares i stan bloku) i czeka na kolejne wywołanie,
 - **większe od 0**: blok „uciekł” z funkcji (zwrócony, przypisany do zmiennej globalnej, zapisany w innym bloku). Odłącza się od trybu `PERSISTENT` i staje zwykłym blokiem nowego właściciela, a funkcja dostanie nowy wpis przy następnym wywołaniu.
 
 **Rekurencja:** gdy wpis `PERSISTENT` jest zajęty przez trwające wywołanie, kolejne wywołanie dostaje zwykły blok. `PERSISTENT` to optymalizacja, więc w trudnym przypadku z niej rezygnuje, a program działa poprawnie.
@@ -240,11 +292,30 @@ Menedżer pamięci to **tablica dynamiczna**, w której każdy wiersz opisuje je
 | adres | 8 B | położenie bloku w pamięci |
 | długość | 8 B | rozmiar bloku w bajtach (do 2^64 B ≈ 16 milionów TB) |
 | shares | 4 B | liczba użyczeń |
-| flagi | 4 B (32 bity) | m.in. `PERSISTENT`, `GLOBAL` |
+| flagi | 4 B (32 bity) | cechy bloku, tabela poniżej |
 
 **Wpis ma 24 bajty** (wyrównanie do 8 bajtów). Milion jednoczesnych bloków to 24 MB.
 
 Gdy `.update` musi przenieść blok w inne miejsce, zmienia się tylko adres we wpisie. Wszystkie zmienne wskazujące ten przydział od razu widzą nowy adres.
+
+**Wolny wpis** rozpoznaje się po `.shares` = 0, więc nie potrzebuje osobnej flagi. Zmienna po `.release` ma `.shares` > 0 (nadal ktoś ją trzyma) i `.length` = 0.
+
+### Flagi wpisu
+
+| Bit | Flaga | Znaczenie |
+|---|---|---|
+| 0 | `GLOBAL` | blok należy do zmiennej globalnej |
+| 1 | `PERSISTENT` | zarezerwowany wpis zmiennej `PERSISTENT` w funkcji |
+| 2 | `WINDOW` | wpis jest oknem na inny blok |
+| 3 | `MAPPED` | blok to plik podpięty przez `.map` (zwalniany inaczej niż zwykła pamięć) |
+| 4–5 | — | zarezerwowane na przyszłe cechy bloku |
+| 6 | `DEBUG_MEMORY_PATTERN` | wypełnianie nowych bajtów wzorem debug (sekcja 5) |
+| 7 | `PRODUCTION_MEMORY_PATTERN` | wypełnianie nowych bajtów wzorem produkcyjnym (sekcja 5) |
+| 8 | `rangeError`, bit młodszy | tryb wyjścia poza blok (sekcja 12) |
+| 9 | `rangeError`, bit starszy | |
+| 10–31 | — | wolne |
+
+**Tryb `rangeError`** zapisany jest na dwóch bitach: wartość = bit 9 × 2 + bit 8, czyli 0 = `DEFAULT`, 1 = `CONTINUE`, 2 = `WARNING`, 3 = `HALT`. Wartość 0 oznacza „sprawdź ustawienie domyślne programu” (`DEFAULT_RANGE_ERROR`).
 
 ### Liczba użyczeń `.shares`
 
@@ -441,8 +512,8 @@ W trybie debug ostrzeżenia `WARNING` trafiają do konsoli lub środowiska progr
 |---|---|
 | `ptr` | działa jak `ptr.pointer` |
 | `ptr.pointer` | zwraca adres bloku |
-| `ptr.new[*]` | rejestruje zmienną i przydziela pierwszy blok: `[rozmiar]` lub `[ilość*typ]`. Tylko raz |
-| `ptr.update[*]` | zmienia rozmiar, zachowując dane; nowe bajty są zerowane. Po `.release` przydziela nowy blok |
+| `ptr.new[*]` | rejestruje zmienną i przydziela pierwszy blok: `[rozmiar]` lub `[ilość*typ]`. Tylko raz. Nie zeruje bloku |
+| `ptr.update[*]` | zmienia rozmiar, zachowując dane; nowe bajty mają nieokreśloną zawartość. Po `.release` przydziela nowy blok |
 | `ptr.release` | zwalnia blok, `.length` = 0; zmienna pozostaje zarejestrowana |
 | `ptr.clear` | zeruje cały blok |
 | `ptr.fill[wartość]` | wypełnia blok powtarzaną wartością (`clear` = `fill[0]`) |
@@ -451,6 +522,8 @@ W trybie debug ostrzeżenia `WARNING` trafiają do konsoli lub środowiska progr
 | `ptr.shares` | zwraca liczbę użyczeń |
 | `ptr.length` | zwraca długość bloku w bajtach (0 = brak bloku) |
 | `ptr.rangeError = <tryb>` | zachowanie przy wyjściu poza blok |
+| `ptr.memoryPatternDebug = ON/OFF` | wypełnianie nowych bajtów wzorem w kompilacji testowej |
+| `ptr.memoryPatternProduction = ON/OFF` | wypełnianie nowych bajtów wzorem w kompilacji finalnej |
 
 ### Odczyt i zapis
 
@@ -474,7 +547,17 @@ Wszystko, co zaczyna się od `copy`, tworzy nowe dane. Pozostałe operacje dzia�
 
 ---
 
-## 15. Przykładowy program
+## 15. Wymagane optymalizacje kompilatora
+
+Model pamięci BEMOL-a (uchwyty w menedżerze, licznik `.shares`, kontrola zakresu) ma swój koszt. Żeby język dotrzymał obietnicy szybkości, kompilator musi go ograniczać w trzech miejscach:
+
+1. **Adres bloku odczytywany raz przed pętlą.** Zmienna `pointer` przechowuje numer wpisu, więc dojście do danych wymaga odczytu adresu z menedżera. W pętli adres się nie zmienia, więc kompilator odczytuje go raz, przed pętlą, trzyma w rejestrze procesora i w środku działa na zwykłym adresie, z prędkością C. Adres jest odczytywany ponownie tylko po operacjach, które mogą przenieść blok (`.update`, `.release`).
+2. **Usuwanie zbędnych zmian `.shares`.** Licznik zmienia się przy wejściu do bloku programu i wyjściu z niego, nigdy przy samym dostępie do danych. Kompilator usuwa pary +1/−1, które się znoszą, np. gdy funkcja tylko czyta blok i nigdzie go nie przekazuje.
+3. **Sprawdzanie zakresu raz przed pętlą.** W pętli od 0 do N kompilator sprawdza przed jej rozpoczęciem, czy cały zakres mieści się w bloku, a w środku pętli nie sprawdza już niczego.
+
+---
+
+## 16. Przykładowy program
 
 ```
 GLOBAL ptr as pointer
@@ -508,7 +591,8 @@ MAIN BEGIN
     B = ptr.byte[1]              # poza blokiem: 0, program działa dalej
 
     ptr.release                  # length = 0, zmienna nadal zarejestrowana
-    ptr.update[100*float]        # nowy, wyzerowany blok 400 bajtów
+    ptr.update[100*float]        # nowy blok 400 bajtów, zawartość nieokreślona
+    ptr.float = 1                # wypełnienie wszystkich floatów (operacja blokowa)
     ptr.float *= 2               # operacja blokowa
 
     size = potega(2, 10)
@@ -525,12 +609,12 @@ potega.end
 
 ---
 
-## 16. Otwarte pytania
+## 17. Otwarte pytania
 
 - [ ] **Cykle w `.shares`:** blok A wskazuje na B, a B na A. Ich `.shares` nigdy nie spadnie do 0, co oznacza wyciek pamięci. Możliwe rozwiązanie: słabe wskaźniki, które nie zwiększają `.shares`.
 - [ ] **`WARNING` w gotowym programie:** gdzie i jak zgłaszać ostrzeżenia poza trybem debug (plik logu, kanał błędów, konfiguracja).
-- [ ] **Wpis okna w menedżerze pamięci:** okno musi znać swojego rodzica i przesunięcie, żeby po przeniesieniu rodzica przez `.update` wskazywać właściwe miejsce. Prawdopodobnie potrzebne pole z numerem rodzica.
-- [ ] **Dodatkowe flagi menedżera:** `MAPPED` (blok to plik z `.map`), `WINDOW` (wpis jest oknem).
+- [ ] **Wpis okna w menedżerze pamięci:** okno (flaga `WINDOW`) musi znać swojego rodzica i przesunięcie, żeby po przeniesieniu rodzica przez `.update` wskazywać właściwe miejsce. Gdzie przechowywać numer rodzica i przesunięcie, skoro wpis ma tylko 24 bajty?
+- [ ] **Przełączanie trybu kompilacji:** jak programista wybiera kompilację testową lub finalną (opcja kompilatora, ustawienie w pliku).
 - [ ] **Działania na różnych typach:** jaki typ ma wynik `ptr.byte[5] + ptr.byte[6]` (czy 200 + 100 mieści się w bajcie?) i co przy mieszaniu typów, np. `int` z `float`.
 - [ ] **Szerokość `.fill[wartość]`:** czy powtarzany wzorzec ma szerokość według sekcji 7.
 - [ ] **Klasy:** pola, metody, `PRIVATE`, tworzenie obiektów.
