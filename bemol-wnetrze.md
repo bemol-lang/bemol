@@ -318,6 +318,22 @@ wpis b: rodzic = blok (nie a!), przesunięcie = 100 + 20 = 120, długość = 50
 
 Dostęp do danych przez `b` to zawsze jeden poziom: wpis `b` → wpis bloku → adres. Liczba widoków rośnie we wpisie bloku źródłowego.
 
+**Wyjątek: pasek na widoku prostokątnym.** Pasek wycięty z prostokąta może obejmować kilka jego wierszy:
+
+```
+kafelek = blok.viewRectangle[2, 3, 4, 3, 10]     # bajty 32–35, 42–45, 52–55
+pasek   = kafelek.viewPortion[2:4]               # bajty widoku 2, 3, 4, 5
+```
+
+Bajty 2–5 kafelka to w bloku 34, 35, 42, 43: dwa kawałki z dwóch różnych wierszy. Takiego układu nie da się zapisać jako jednego widoku paskowego ani prostokątnego na bloku. Dlatego rodzicem paska zostaje widok prostokątny, a adres bajtu nr k paska liczony jest w dwóch krokach:
+
+```
+1. bajt w kafelku = przesunięcie paska + k        (np. 2 + 0 = 2)
+2. bajt w bloku   = adres jak dla kafelka (rozdział wyżej) dla bajtu 2 → 34
+```
+
+Prototyp tłumacza obsługuje ten przypadek właśnie tak.
+
 ---
 
 ## 6. Odłamki w praktyce
@@ -380,7 +396,7 @@ Wszystkie optymalizacje dotyczą **maszynerii kompilatora**, nigdy operacji prog
 Programista pisze:
 
 ```
-for i = 0 to n-1 do
+for i as int = 0 to n-1 do
     ptr.float[i] = ptr.float[i] * 2
 for.end
 ```
@@ -408,12 +424,12 @@ Formalnie wejście do funkcji zwiększa `.shares` bloku o 1, a wyjście zmniejsz
 ### 9.3. Sprawdzanie zakresu raz przed pętlą
 
 ```
-for i = 0 to n-1 do
+for i as int = 0 to n-1 do
     x = ptr.float[i]
 for.end
 ```
 
-Kompilator sprawdza przed pętlą, czy `n × 4 ≤ ptr.length`:
+Kompilator sprawdza przed pętlą, czy `n × 4 ≤ ptr.size`:
 
 - **tak**: wykonuje szybką wersję pętli, bez żadnych sprawdzeń w środku,
 - **nie**: wykonuje wersję ze sprawdzaniem, która zachowuje się dokładnie według `.rangeError` i zasad odłamków.

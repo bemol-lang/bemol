@@ -3,6 +3,7 @@
 > **BEMOL**: *Boundless Efficient Machine-Oriented Language*
 > Repozytorium: `github.com/bemol-lang/bemol` · rozszerzenie plików: `.bmol`
 > Jak język działa w środku: [**bemol-wnetrze.md**](bemol-wnetrze.md)
+> Prototyp tłumacza BEMOL → C: folder [`prototyp/`](prototyp/README.md)
 > Status: **szkic roboczy** · ostatnia aktualizacja: 2026-10-16
 
 BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. Daje dostęp do pamięci z precyzją asemblera (każdy bajt, każdy bit), ale z czytelną składnią i automatycznym zarządzaniem pamięcią.
@@ -104,7 +105,8 @@ if.end
 Język rozróżnia wielkość liter.
 
 - **Słowa kluczowe budujące strukturę programu lub decydujące o życiu zmiennych piszemy WIELKIMI literami** (wymagane): `MAIN`, `BEGIN`, `END`, `CLASS`, `FUNCTION`, `STRUCT`, `ENUM`, `GLOBAL`, `PERSISTENT`, `CONST`, `REF`, `ALIAS`, `PRIVATE`.
-- **Słowa przepływu sterowania, operatory, funkcje wbudowane i łączniki piszemy małymi literami:** `if`, `then`, `elseif`, `else`, `for`, `to`, `step`, `do`, `while`, `repeat`, `until`, `foreach`, `in`, `break`, `continue`, `switch`, `case`, `as`, `return`, `this`, `and`, `or`, `xor`, `not`, `shl`, `shr`, `rol`, `ror`, `saturate`.
+- **Słowa przepływu sterowania, operatory, funkcje wbudowane i łączniki piszemy małymi literami:** `if`, `then`, `elseif`, `else`, `for`, `to`, `step`, `do`, `while`, `repeat`, `until`, `foreach`, `in`, `break`, `continue`, `switch`, `case`, `as`, `return`, `this`, `and`, `or`, `xor`, `not`, `shl`, `shr`, `rol`, `ror`, `saturate`, `print`, `println`.
+- **Wbudowane stałe programu** piszemy wielkimi literami: `BUILD_MODE`, `ARGS`.
 - **Wieloczłonowe nazwy wbudowane w język** piszemy z wielką literą na początku kolejnych słów: `rangeError`, `copyPortion`, `viewRectangle`.
 - **Polecenia dla kompilatora** zaczynają się od `@` (np. `@ACCEPT`, sekcja 20). Znak `@` jest zarezerwowany dla nich: od razu widać, co jest logiką programu, a co instrukcją dla narzędzi.
 - **Nazwy zmiennych, funkcji, klas, stałych i wartości wyliczeń programisty są dowolne.** Zalecenia stylu: sekcja 26.
@@ -142,7 +144,7 @@ kafelek = obraz.viewRectangle[100*Color, 50,
 Każdy blok zamyka się swoją nazwą z przyrostkiem `.end`:
 
 ```
-for i = 1 to 10 do
+for i as int = 1 to 10 do
     ...
 for.end
 
@@ -201,7 +203,7 @@ CONST ROZMIAR as int = 1024        # stała
 **1. Zmienna żyje od deklaracji do końca bloku, w którym ją zadeklarowano.** Blokiem jest funkcja, `MAIN`, każde `if`, `for`, `while`, `foreach`, `repeat` i gałąź `case`:
 
 ```
-for i = 0 to 100 do
+for i as int = 0 to 100 do
     x as doublefloat = i * 0.01
     ...
 for.end
@@ -223,7 +225,7 @@ for.end
 ```
 FUNCTION potega(base as float, times as int): float
     temp as float = 1
-    for i = 1 to times do
+    for i as int = 1 to times do
         temp = temp * base
     for.end
     return temp
@@ -282,6 +284,64 @@ mn, mx = minmax(pomiary)
 
 To czytelniejsze niż zwracanie wyników przez `REF`. `REF` zostaje dla przypadków, gdy funkcja zmienia istniejącą wartość, a nie produkuje nową.
 
+### Wypisywanie: `print` i `println`
+
+```
+print("Rozmiar obrazu: ", obraz.size)          # bez przejścia do nowej linii
+println("Rozmiar obrazu: ", obraz.size)        # z przejściem do nowej linii
+```
+
+- dowolna liczba argumentów po przecinku, różnych typów: teksty, liczby, `bit`, wartości `ENUM` (wypisywane nazwą),
+- wynik trafia na standardowe wyjście programu (konsola).
+
+**Format liczb** po dwukropku:
+
+```
+println(kolor : hex)        # &FF00h
+println(flagi : bin)        # &0110b
+println(pi : 3)             # 3.142 (3 miejsca po przecinku)
+```
+
+Liczby szesnastkowe i binarne są wypisywane **w tym samym zapisie co literały w kodzie** (`&...h`, `&...b`), więc wynik można wkleić z powrotem do programu. Najbardziej znaczące cyfry stoją po lewej.
+
+**Zrzut bloku:** blok lub widok wypisany z `: hex` pokazuje bajty **w kolejności adresów**, po 16 w linii, z przesunięciem na początku linii. Widok prostokątny wypisywany jest wiersz po wierszu, więc od razu widać, co „wycina”:
+
+```
+println(obraz.viewPortion[0:32] : hex)
+```
+
+```
+000000: 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F
+000010: 10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D 1E 1F
+```
+
+**Blok bez formatu** wypisuje krótki opis zamiast zawartości, żeby przypadkiem nie wypisać gigabajtów danych:
+
+```
+println(obraz)              # blok #17, 20 736 000 B, shares 1, widoki 0
+```
+
+**Zmienna liczba argumentów tylko dla funkcji wbudowanych.** `print` i `println` są wbudowane w kompilator: podczas kompilacji rozkłada on wywołanie na serię prostych wywołań, bo zna typ każdego argumentu. Funkcje programisty mają stałą liczbę parametrów; gdy trzeba przekazać „dowolnie wiele” wartości, przekazuje się blok.
+
+> **Dlaczego nie ma `...` jak w C?** W C funkcja ze zmienną liczbą parametrów (`int printf(const char *format, ...)`) traci informację o ich typach i sama musi zgadywać, co dostała. `printf("%d", 3.14)` wypisuje śmieci, a takie pomyłki bywały nawet dziurami bezpieczeństwa. W BEMOL-u typy argumentów `print` zna kompilator.
+
+### Start i koniec programu
+
+```
+MAIN BEGIN
+    if ARGS.count < 2 then
+        println("Użycie: program plik.raw")
+        return 1                     # kod zakończenia: błąd
+    if.end
+    nazwa as text = ARGS[1]          # argumenty jako teksty, ARGS[0] to nazwa programu
+    ...
+    return 0                         # kod zakończenia: sukces
+MAIN END
+```
+
+- **argumenty z linii poleceń** są w wbudowanej stałej `ARGS`: `ARGS.count` to ich liczba, `ARGS[n]` to n-ty argument jako `text`,
+- **`return` w `MAIN`** kończy program i zwraca kod zakończenia do systemu (0 = sukces, inne = błąd). Dojście do `MAIN END` bez `return` oznacza 0.
+
 ### Stos i sterta
 
 - **Zmienne statyczne, o stałym rozmiarze** (`int`, `float`, `byte`...), trafiają na **stos**. Procesor przydziela i zwalnia dla nich miejsce jedną instrukcją przy wejściu do funkcji i wyjściu z niej, więc kosztują praktycznie zero. Każde wywołanie funkcji, także rekurencyjne, ma własne kopie.
@@ -334,17 +394,48 @@ if.end
 ### Pętla `for`: licznik od–do
 
 ```
-for i = 0 to 9 do ... for.end                  # 0, 1, ..., 9 (koniec włącznie)
-for i = 0 to 100 step 5 do ... for.end         # 0, 5, 10, ..., 100
-for i = 10 to 0 step -1 do ... for.end         # w dół
+for i as int = 0 to 9 do ... for.end                  # 0, 1, ..., 9 (koniec włącznie)
+for i as int = 0 to 100 step 5 do ... for.end         # 0, 5, 10, ..., 100
+for i as int = 10 to 0 step -1 do ... for.end         # w dół
 ```
 
 - bez `step` krok wynosi 1; gdy początek jest większy od końca, pętla wykonuje się zero razy (liczenie w dół wymaga jawnego `step -1`),
-- zmienna pętli tworzy się sama, istnieje tylko w pętli i ma typ `longint`, żeby indeks nie skończył się przy blokach większych niż 2 GB,
-- **początek, koniec i krok muszą być liczbami całkowitymi.** Wartość ułamkową liczy się w środku pętli z licznika:
+- **początek, koniec i krok muszą być liczbami całkowitymi** (ramka niżej).
+
+**Typ licznika jest zawsze jawny.** Są dwie dozwolone formy:
+
+| Zapis | Znaczenie |
+|---|---|
+| `for i as int = 0 to 10` | nowy licznik zadeklarowanego typu całkowitego, istnieje **tylko w pętli** |
+| `for i = 0 to 10`, gdy `i` zadeklarowano wcześniej | używa istniejącej zmiennej całkowitej; **po pętli zostaje w niej ostatnia wartość, jaką wpisała pętla** (jeśli pętla nie wykonała się ani razu, zmienna jest nietknięta) |
+| `for i = 0 to 10` bez deklaracji `i` | **błąd kompilacji** z podpowiedzią obu powyższych form |
+
+Licznik zadeklarowany w pętli znika po `for.end`, a użycie go dalej jest błędem z czytelną podpowiedzią:
 
 ```
-for i = 0 to 100 do
+błąd BML-E0300: nieznana nazwa „i”
+   = „i” istniało tylko w pętli for z linii 8 i zniknęło po for.end
+   = pomoc: jeśli potrzebujesz wartości po pętli, zadeklaruj licznik przed pętlą: i as int
+```
+
+Licznik zadeklarowany wcześniej przydaje się np. do znalezienia miejsca, w którym pętlę przerwało `break`:
+
+```
+i as int
+for i = 0 to 999 do
+    if dane.byte[i] == 0 then break; if.end
+for.end
+println("pierwsze zero na pozycji ", i)
+```
+
+**Jawny typ licznika czyni regułę szerokości przewidywalną.** `blok.byte[i] = i` zapisuje tyle bajtów, ile ma typ `i` (sekcja 10): przy `i as byte` jeden bajt, przy `i as int` cztery. Gdy licznik musi być szerszy niż zapisywana wartość, wartość zamienia się jawnie: `blok.byte[i] = i as byte` (sekcja 5).
+
+**Ochrona przed pętlą bez końca.** Pętla `for j as byte = 0 to 255` w języku z zawijaniem liczb (jak C) nigdy by się nie skończyła: po 255 licznik wraca do 0, więc warunek „j ≤ 255” jest zawsze prawdziwy. W BEMOL-u kompilator liczy obroty wewnętrznie w szerokim liczniku, a zmienna `j` dostaje w każdym obrocie jego wartość. Pętla zawsze się kończy. Gdy początek lub koniec nie mieści się w typie licznika (`for j as byte = 0 to 300`), to błąd kompilacji, a przy wartościach znanych dopiero w działaniu programu jedno sprawdzenie przed startem pętli.
+
+Wartość ułamkową liczy się w środku pętli z licznika:
+
+```
+for i as int = 0 to 100 do
     x as doublefloat = i * 0.01      # 0, 0.01, ..., 1
     ...
 for.end
@@ -354,7 +445,9 @@ for.end
 > Liczby takie jak 0.01 nie dają się zapisać w systemie dwójkowym dokładnie, tak jak 1/3 w dziesiętnym. Gdy pętla co obrót dodaje ułamkowy krok, błędy się sumują: po stu krokach 0.01 wychodzi 0.99999999999999 albo 1.00000000000001. W językach, które na to pozwalają (C, C++, Java, JavaScript), pętla „od 0 do 1 co 0.01” wykonuje się raz 100, a raz 101 razy, zależnie od kierunku błędu. To jeden z trudniejszych do znalezienia błędów.
 > W BEMOL-u licznik pętli jest zawsze liczbą całkowitą, więc liczba obrotów jest dokładna i widoczna w kodzie. Wartość ułamkowa liczona z licznika (`x = i * 0.01`) jest wyliczana za każdym razem od nowa, więc błąd się nie kumuluje.
 
-Zapis `for x = 0 to 1 step 0.01` to błąd kompilacji z podpowiedzią, jak go przepisać.
+Zapis `for x as doublefloat = 0 to 1 step 0.01` to błąd kompilacji z podpowiedzią, jak go przepisać.
+
+> **Dlaczego typ licznika musi być jawny?** Prototyp tłumacza pokazał, że przy domyślnym typie licznika (`longint`, 8 bajtów) najbardziej naturalna linia `blok.byte[i] = i` zapisuje 8 bajtów zamiast jednego i wychodzi poza blok. Typ widoczny w nagłówku pętli sprawia, że konsekwencje reguły szerokości są oczywiste w miejscu, gdzie powstaje licznik.
 
 ### Pętla `while`: warunek na początku
 
@@ -383,11 +476,12 @@ foreach px in obraz.Color do
     px.R = 255 - px.R
 foreach.end
 
-foreach px, i in kafelek.Color do      # z numerem elementu
+foreach px, i as int in kafelek.Color do      # z numerem elementu
     ...
 foreach.end
 ```
 
+- **numer elementu ma jawny typ całkowity**, tak jak licznik pętli `for`,
 - **`px` nie jest kopią, tylko nazwą elementu w bloku**, jak alias. Zapis do `px.R` zmienia dane w bloku,
 - działa na blokach, widokach paskowych i prostokątnych (przy prostokącie kompilator sam przechodzi wiersz po wierszu),
 - kompilator wie, że iteracje dotyczą kolejnych elementów, więc łatwo zamienia pętlę na instrukcje wektorowe.
@@ -550,6 +644,26 @@ Procesory mają gotowe instrukcje wektorowe nasycenia dla bajtów i liczb 16-bit
 
 > **Uwaga dla znających HLSL / Unreal Engine:** w HLSL `saturate(x)` zawsze przycina do zakresu 0–1. W BEMOL-u `saturate( )` przycina do zakresu typu soczewki: `saturate(1.7)` jako `float` zostaje 1.7. Przycięcie do dowolnego zakresu (np. 0–1) to kandydat do biblioteki standardowej: `clamp(x, min, max)`.
 
+### Jawna zamiana typu: `as`
+
+`wyrażenie as typ` zamienia wartość na podany typ, dokładnie tak, jak przypisanie do zmiennej tego typu: liczby całkowite się zawijają (zostaje **najmłodsza część**, np. najmłodszy bajt), a przy zamianie float na liczbę całkowitą odrzucany jest ułamek.
+
+```
+i as int = 300                       # &012Ch
+b as byte = i as byte                # &2Ch = 44 (najmłodszy bajt)
+
+for i as int = 0 to 999 do
+    blok.byte[i] = i as byte         # zapis 1 bajtu: wartość ma typ byte (reguła szerokości, sekcja 10)
+for.end
+
+x = (a + b) as byte                  # zamiana całej sumy
+y = a + b as byte                    # zamiana tylko b: as wiąże mocniej niż + i *
+```
+
+`as` to to samo słowo, które w deklaracjach znaczy „jako typ” (`i as int`), więc ma jedno znaczenie w dwóch miejscach.
+
+> **Dlaczego nie `(byte) i` jak w C?** W BEMOL-u nazwa typu w wyrażeniu oznacza jego rozmiar (`new[100*Color]`). Zapis z nawiasami byłby dwuznaczny: `(Color) - 1` to zamiana liczby -1 na typ `Color` czy rozmiar `Color` minus 1? C rozwiązuje podobne dwuznaczności regułami, które zna niewielu programistów. `as` stoi po wartości, więc dwuznaczności nie ma.
+
 ### Zamiana float na typ całkowity
 
 Brana jest **część całkowita, ułamek jest odrzucany** (obcinanie w stronę zera):
@@ -633,7 +747,7 @@ ptr as pointer
 GLOBAL ptr as pointer
 ```
 
-Zadeklarowana zmienna nie ma jeszcze bloku: `ptr.length` zwraca 0.
+Zadeklarowana zmienna nie ma jeszcze bloku: `ptr.size` zwraca 0.
 
 ### Przypisanie wskaźnika a zapis danych
 
@@ -679,14 +793,14 @@ Zmienia rozmiar bloku, **zachowując istniejące dane**. **Nowo dodane bajty nie
 Powód: przy bardzo dużych blokach zerowanie to kosztowna operacja, często zbędna, bo programista i tak zaraz wypełni blok własnymi danymi. Kto potrzebuje zer, mówi to jawnie:
 
 ```
-stary as longint = ptr.length
+stary as longint = ptr.size
 ptr.update[2048]
-ptr.viewPortion[stary:ptr.length-stary].clear    # zeruje tylko nowo dodaną część
+ptr.viewPortion[stary:ptr.size-stary].clear    # zeruje tylko nowo dodaną część
 ```
 
 ### `.release` — zwolnienie pamięci
 
-Zwalnia blok i ustawia `.length` na 0. **Rejestracja zmiennej przeżywa `.release`**: inna część programu, która trzyma tę zmienną, nie dostaje wskaźnika donikąd, tylko widzi `.length = 0`, a odczyt zachowuje się zgodnie z `.rangeError`.
+Zwalnia blok i ustawia `.size` na 0. **Rejestracja zmiennej przeżywa `.release`**: inna część programu, która trzyma tę zmienną, nie dostaje wskaźnika donikąd, tylko widzi `.size = 0`, a odczyt zachowuje się zgodnie z `.rangeError`.
 
 **Bloku, na który patrzą widoki, nie można zwolnić** (sekcja 14). Najpierw trzeba zwolnić widoki.
 
@@ -786,7 +900,7 @@ Ostatnie 8 bajtów wpisu (przesunięcie 24) ma znaczenie zależne od rodzaju wpi
 
 Gdy `.update` musi przenieść blok w inne miejsce, zmienia się tylko adres we wpisie. Wszystkie zmienne i widoki wskazujące ten przydział od razu widzą nowy adres.
 
-**Wolny wpis** rozpoznaje się po `.shares` = 0 **i** liczbie widoków = 0. Zmienna po `.release` ma `.shares` > 0 (nadal ktoś ją trzyma) i `.length` = 0.
+**Wolny wpis** rozpoznaje się po `.shares` = 0 **i** liczbie widoków = 0. Zmienna po `.release` ma `.shares` > 0 (nadal ktoś ją trzyma) i `.size` = 0.
 
 ### Flagi wpisu (bity serwisowe)
 
@@ -1011,7 +1125,7 @@ kafelek = obraz.viewRectangle[100*Color, 50, 64*Color, 64, szer*Color]
 
 Czyta się: od piksela 100 w wierszu 50, 64 piksele szerokości, 64 wiersze, wiersz obrazu ma `szer` pikseli.
 
-Widok ma wszystkie operacje bloku (soczewki, operacje blokowe, `.length`, `.fill`...) oprócz `.new`.
+Widok ma wszystkie operacje bloku (soczewki, operacje blokowe, `.size`, `.fill`...) oprócz `.new`.
 
 ```
 kafelek.Color[0]          # lewy górny piksel wycinka
@@ -1067,7 +1181,9 @@ Liczba wierszy nie jest zapisywana, bo wynika z długości: wiersze = długość
 
 Adres rodzica jest odczytywany z jego wpisu (raz przed pętlą). Widok pamięta numer rodzica, a nie adres, więc po przeniesieniu rodzica przez `.update` nadal wskazuje właściwe miejsce. W pętli kompilator nie dzieli przy każdym dostępie, tylko przechodzi wiersz po wierszu i na końcu wiersza przeskakuje o krok. Przykład krok po kroku: [bemol-wnetrze.md, rozdział 5](bemol-wnetrze.md#5-widoki-krok-po-kroku).
 
-**Widok widoku** jest przy tworzeniu zamieniany na widok bezpośrednio na oryginalny blok (przesunięcia się sumują). Dostęp to zawsze jeden poziom, bez łańcucha pośredników.
+**Widok widoku** jest przy tworzeniu zamieniany na widok bezpośrednio na oryginalny blok (przesunięcia się sumują), więc dostęp to zwykle jeden poziom, bez łańcucha pośredników.
+
+**Wyjątek: widok paskowy na widoku prostokątnym** (np. `kafelek.viewPortion[0:20]`). Pasek może obejmować kilka wierszy prostokąta, więc nie da się go zapisać jako jednego widoku na oryginalny blok. Jego rodzicem zostaje wtedy widok prostokątny, a adres liczony jest w dwóch krokach (najpierw w prostokącie, potem w bloku). Wykazał to prototyp tłumacza.
 
 ### Zasady życia widoków
 
@@ -1209,11 +1325,12 @@ t as text
 t.new[1024]          # pojemność 1024, długość tekstu 0
 t = "abc"            # długość tekstu 3
 t.length             # 3    (długość tekstu)
-t.capacity           # 1024 (pojemność)
+t.size               # 1024 (pojemność, czyli rozmiar bloku)
 ```
 
-- **`.length` dla tekstu zwraca długość tekstu** (w bajtach), bo to chce wiedzieć człowiek pytający o długość napisu,
-- **`.capacity`** zwraca pojemność,
+- **`.length` zwraca długość tekstu** (w bajtach) i istnieje **tylko dla tekstów**, bo to chce wiedzieć człowiek pytający o długość napisu,
+- **`.size` zwraca pojemność**, czyli rozmiar bloku, jak dla każdego bloku. Osobne `.capacity` nie jest potrzebne,
+- `.length` na zwykłym bloku to błąd kompilacji z podpowiedzią „czy chodziło o `.size`?”,
 - **odczyt za końcem tekstu** (`t.byte[500]`, gdy tekst ma 3 bajty) jest wyjściem poza zakres i reaguje według `.rangeError`. Nieużywane bajty za tekstem są niedostępne przez przypadek,
 - tekst może mieć do 2^64 bajtów; w praktyce ogranicza go pamięć, a przy tekście z pliku mapowanego dysk.
 
@@ -1387,13 +1504,14 @@ Każda akceptacja jest widoczna dokładnie tam, gdzie zapadła decyzja. Kod z wi
 | `ptr.pointer` | zwraca adres bloku |
 | `ptr.new[*]` | rejestruje zmienną i przydziela pierwszy blok: `[rozmiar]` lub `[ilość*typ]`. Tylko raz. Nie zeruje bloku |
 | `ptr.update[*]` | zmienia rozmiar, zachowując dane; nowe bajty mają nieokreśloną zawartość. Po `.release` przydziela nowy blok |
-| `ptr.release` | zwalnia blok, `.length` = 0; zmienna pozostaje zarejestrowana. Niedozwolone przy aktywnych widokach |
+| `ptr.release` | zwalnia blok, `.size` = 0; zmienna pozostaje zarejestrowana. Niedozwolone przy aktywnych widokach |
 | `ptr.clear` | zeruje cały blok (zawsze wykonywane, także tuż przed `.release`) |
 | `ptr.fill[wartość]` | wypełnia blok powtarzanym wzorem (sekcja 12) |
 | `ptr.map["plik"]` | podpina plik z dysku jako blok pamięci, tylko do odczytu |
 | `ptr.map["plik", WRITABLE]` | podpina plik z dysku do odczytu i zapisu |
 | `ptr.shares` | zwraca liczbę użyczeń |
-| `ptr.length` | zwraca długość bloku w bajtach (0 = brak bloku) |
+| `ptr.size` | zwraca rozmiar bloku w bajtach (0 = brak bloku); dla tekstu pojemność |
+| `t.length` | tylko tekst: długość tekstu w bajtach |
 | `ptr.rangeError = <tryb>` | zachowanie przy wyjściu poza blok |
 | `ptr.memoryPatternDebug = ON/OFF` | wypełnianie nowych bajtów wzorem w kompilacji testowej |
 | `ptr.memoryPatternProduction = ON/OFF` | wypełnianie nowych bajtów wzorem w finalbake |
@@ -1594,7 +1712,7 @@ MAIN BEGIN
 
     obraz.new[SZER*WYS*Color]         # 20 736 000 bajtów, zawartość nieokreślona
     obraz.clear                       # jawne zerowanie
-    size = obraz.length
+    size = obraz.size
 
     obraz.Color[32].G = 500           # pole G w pikselu nr 32 (2 bajty)
     B = obraz.byte[320]               # pierwszy bajt piksela nr 32
@@ -1636,7 +1754,7 @@ MAIN END
 
 FUNCTION potega(base as float, times as int): float
     temp as float = 1
-    for i = 1 to times do
+    for i as int = 1 to times do
         temp = temp * base
     for.end
     return temp
@@ -1652,9 +1770,8 @@ potega.end
 - [ ] **Praca równoległa:** `for.parallel`, `split.chunk`, `split.cores`, tryby widoków (`read` / `write`).
 - [ ] **Nazwy operacji wbudowanych:** liczenie bitów, redukcje (suma, min, max, iloczyn skalarny), zamiana kolejności bajtów.
 - [ ] **Podmiana funkcji w działającym programie** (cel na przyszłość, sekcja 22).
-- [ ] **Wejście i wyjście:** wypisywanie wartości na ekran, odczyt i zapis zwykłych plików.
+- [ ] **Pliki:** odczyt i zapis zwykłych plików (poza `.map`).
 - [ ] **Programy z wielu plików:** dołączanie funkcji, struktur i stałych z innych plików `.bmol`.
-- [ ] **Start i koniec programu:** argumenty podane przy uruchomieniu, kod zakończenia zwracany do systemu.
 - [ ] **Wyjście z kilku zagnieżdżonych pętli naraz.**
 - [ ] **Funkcje biblioteki tekstowej:** wyszukiwanie, wycinanie, zamiana liczb na tekst i odwrotnie, porównanie treści bloków.
 - [ ] **Środowisko programistyczne (BEMOLIZER):** szczegóły interfejsu (sekcja 23).
