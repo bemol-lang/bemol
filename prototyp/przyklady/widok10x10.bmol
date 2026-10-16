@@ -1,0 +1,37 @@
+# Przykład z bemol-wnetrze.md, rozdział 5: widok prostokątny 10 × 10
+# Blok 100 bajtów ułożony jak obraz 10 × 10, jeden piksel = jeden bajt.
+
+MAIN BEGIN
+    blok as pointer
+    blok.new[100]
+
+    for i as int = 0 to 99 do
+        blok.byte[i] = i as byte      # numer bajtu = jego wartość, zapis 1 B
+    for.end
+
+    # prostokąt od x = 2, y = 3, szerokość 4, wysokość 3, krok 10
+    kafelek as pointer = blok.viewRectangle[2, 3, 4, 3, 10]
+
+    println("Widok: ", kafelek)
+    println("Rodzic: ", blok)
+
+    print("Bajty widoku (k = 0...11): ")
+    for k as int = 0 to kafelek.size - 1 do
+        print(kafelek.byte[k], " ")
+    for.end
+    println("")
+
+    println("kafelek.byte[5] = ", kafelek.byte[5], "   (oczekiwane: 43)")
+
+    println("Zrzut widoku, wiersz po wierszu:", kafelek : hex)
+
+    # zapis przez widok zmienia rodzica
+    foreach px in kafelek.byte do
+        px = 255
+    foreach.end
+    println("Rodzic po zapisie 255 przez widok:", blok.viewPortion[30:30] : hex)
+
+    kafelek.release
+    blok.release
+    println("Koniec: ", blok)
+MAIN END

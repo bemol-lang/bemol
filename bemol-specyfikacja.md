@@ -325,6 +325,56 @@ println(obraz)              # blok #17, 20 736 000 B, shares 1, widoki 0
 
 > **Dlaczego nie ma `...` jak w C?** W C funkcja ze zmienną liczbą parametrów (`int printf(const char *format, ...)`) traci informację o ich typach i sama musi zgadywać, co dostała. `printf("%d", 3.14)` wypisuje śmieci, a takie pomyłki bywały nawet dziurami bezpieczeństwa. W BEMOL-u typy argumentów `print` zna kompilator.
 
+### Czytanie z klawiatury: `keyInput`
+
+Prosty odczyt linii wpisanej przez człowieka, jak `readln` w Pascalu albo `scanf` w C, ale bez ich pułapek:
+
+```
+imie as text
+wiek as byte
+keyInput("Jak masz na imię? ", REF imie)
+keyInput("Ile masz lat? ", REF wiek)
+keyInput("Szerokość: ", REF szer, "Wysokość: ", REF wys)     # kilka pytań w jednym wywołaniu
+keyInput()                                                 # czeka na Enter
+keyInput("Naciśnij Enter...")                              # tekst i czekanie na Enter
+```
+
+- **teksty w cudzysłowie** są wypisywane jako pytanie, **`REF zmienna`** dostaje odpowiedź. `REF` stoi przy wywołaniu tak jak przy każdej funkcji, która zmienia zmienną (sekcja 3, parametry),
+- **jedna linia na jedną zmienną**, zakończona Enterem; znak końca linii (także `\r` z Windows) nie trafia do zmiennej,
+- **stały bufor 255 bajtów.** Dłuższa linia jest odrzucana w całości z prośbą o ponowne wpisanie, więc nie ma przepełnienia bufora ani „resztek” czytanych przez następne pytanie,
+- **liczby są sprawdzane według typu zmiennej**: zły zapis (`abc`) albo wartość spoza zakresu (`300` dla `byte`) daje komunikat i ponowienie tego samego pytania. Program nie dostaje nigdy połowicznie wczytanej ani przekręconej liczby. Dla `float` i `doublefloat` przyjmowana jest kropka i przecinek (`3.5`, `3,5`), spacje na początku i końcu są pomijane,
+- **tekst dostaje dokładnie tyle bajtów, ile wpisano**: `keyInput` robi `.new` albo `.update` na długość odpowiedzi i zapisuje ją w polu długości tekstu w menedżerze (sekcja 18). Bez zera na końcu, bo długość jest znana,
+- **koniec danych wejściowych** w czasie czekania na odpowiedź (np. wejście z pliku się skończyło) to błąd `BML-E0130`.
+
+```
+Ile masz lat? abc
+[ ! ] To nie jest liczba typu byte (0...255), wpisz jeszcze raz
+Ile masz lat? 300
+[ ! ] To nie jest liczba typu byte (0...255), wpisz jeszcze raz
+Ile masz lat? 42
+```
+
+### Czytanie danych wejściowych: `INPUT.read`
+
+Do dużych danych (plik przekierowany na wejście programu, dane z innego programu) służy odczyt porcjami do bloku:
+
+```
+bufor as pointer
+bufor.new[65536]                     # wielkość porcji wybiera programista
+n as longint = INPUT.read[bufor]
+while n > 0 do
+    ...                              # w buforze jest n nowych bajtów
+    n = INPUT.read[bufor]
+while.end
+```
+
+- **`INPUT.read[bufor]` wypełnia blok kolejnymi bajtami wejścia** i zwraca ich liczbę. Wynik może być mniejszy niż `bufor.size` (ostatnia porcja); **0 oznacza koniec danych**,
+- **bajty są czytane bez zmian**: bez zamiany końców linii, bez interpretacji kodowania. Dla bloku `text` wynik trafia też do pola długości tekstu,
+- **rozmiar bloku się nie zmienia.** To programista decyduje, ile pamięci zajmuje porcja, a pętla odczytu nie przydziela pamięci w kółko,
+- działa także z widokiem jako buforem (np. czytanie wprost do fragmentu większego bloku).
+
+> **Dlaczego dwa sposoby czytania?** Człowiek przy klawiaturze wpisuje krótkie linie i myli się, więc `keyInput` pilnuje typu, zakresu i długości. Dane z pliku mogą mieć gigabajty i dowolną zawartość, więc `INPUT.read` czyta surowe bajty dużymi porcjami do bloku, na którym działają wszystkie soczewki. Jedna funkcja „do wszystkiego” byłaby albo niewygodna dla człowieka, albo za wolna dla danych.
+
 ### Start i koniec programu
 
 ```
@@ -413,9 +463,18 @@ for i as int = 10 to 0 step -1 do ... for.end         # w dół
 Licznik zadeklarowany w pętli znika po `for.end`, a użycie go dalej jest błędem z czytelną podpowiedzią:
 
 ```
-błąd BML-E0300: nieznana nazwa „i”
-   = „i” istniało tylko w pętli for z linii 8 i zniknęło po for.end
-   = pomoc: jeśli potrzebujesz wartości po pętli, zadeklaruj licznik przed pętlą: i as int
+*****************************************************************
+ERROR: BML-E0300
+petla.bmol
+at line 11, column 32
+-----------------------------------------------------------------
+11 |     println("ostatnie i = ", i)
+   |                              ^
+-----------------------------------------------------------------
+  [ ! ] Nieznana nazwa „i”
+  [ i ] „i” istniało tylko w pętli for z linii 8 i zniknęło po for.end
+[ tip ] jeśli wartość jest potrzebna po pętli, zadeklaruj „i as int” przed pętlą i pisz: for i = ...
+_________________________________________________________________
 ```
 
 Licznik zadeklarowany wcześniej przydaje się np. do znalezienia miejsca, w którym pętlę przerwało `break`:
@@ -797,6 +856,19 @@ stary as longint = ptr.size
 ptr.update[2048]
 ptr.viewPortion[stary:ptr.size-stary].clear    # zeruje tylko nowo dodaną część
 ```
+
+**Pamięć obiecana a pamięć przydzielona.** System operacyjny po `.new` i `.update` tylko *obiecuje* pamięć: zapisuje, że blok istnieje, ale fizyczne strony (po 4 KB) podpina dopiero przy pierwszym zapisie do każdej z nich. Dlatego duży blok po `.update` prawie nic nie kosztuje, a pamięć programu rośnie dopiero w miarę zapisywania danych. Program, który musi mieć pamięć przydzieloną od razu (część krytyczna, praca, której nie wolno przerwać w połowie), dotyka całego bloku jawnie:
+
+```
+dane.update[3000000000]
+dane.clear                 # każda strona dostaje fizyczną pamięć teraz, a nie w trakcie pracy
+```
+
+Kompilator nigdy nie usuwa tego `.clear` jako „zbędnego” (sekcja 22), choć świeże strony od systemu i tak są zerami.
+
+> **Dlaczego `.update` nie przydziela pamięci od razu?** Wiele programów rezerwuje blok „na zapas” (bufor na plik o nieznanej długości, obraz, który może urosnąć) i używa tylko jego części. Przydzielanie wszystkiego od razu kosztowałoby czas i pamięć wszystkie takie programy. W BEMOL-u koszt ponosi tylko ten, kto go jawnie wybrał, a w kodzie widać, który blok jest przydzielony od razu.
+>
+> Różnica między systemami: Windows liczy obietnice ściśle, więc za duże `.update` dostaje odmowę od razu i program kończy się czytelnym błędem `BML-E0003 Brak pamięci` w tej linii. Linux zwykle obiecuje więcej, niż ma; brak pamięci wychodzi tam dopiero przy zapisie, a `.clear` zaraz po `.update` przenosi ten moment na początek pracy.
 
 ### `.release` — zwolnienie pamięci
 
@@ -1427,19 +1499,52 @@ W finalbake bez `WARNING_HANDLER` tryb `WARNING` zachowuje się dokładnie jak `
 
 Wiele kompilatorów zgłasza błędy tak, że nie wiadomo, co je wywołało. W BEMOL-u **każdy błąd mówi co, gdzie, dlaczego i jak naprawić**, a kompilator wypisuje go w dwóch formach z jednego źródła: dla człowieka i dla agenta AI.
 
-**Forma dla człowieka:**
+**Forma dla człowieka**: ramka, w której każda informacja ma stałe miejsce:
 
 ```
-błąd BML-E0412: zwalniasz blok, na który patrzą widoki
-  --> obraz.bmol:57:5
-   |
+*****************************************************************
+ERROR: BML-E0412
+obraz.bmol
+at line 57, column 5
+-----------------------------------------------------------------
 57 |     obraz.release
-   |     ^^^^^^^^^^^^^ blok `obraz` ma 1 aktywny widok
-   |
-   = widok `kafelek` utworzony tutaj: obraz.bmol:41:15
-   = zasada: bloku z aktywnymi widokami nie można zwolnić (specyfikacja, sekcja 14)
-   = pomoc: najpierw zwolnij widok: `kafelek.release`
+   |     ^
+-----------------------------------------------------------------
+  [ ! ] Zwalniasz blok, na który patrzą widoki
+  [ i ] blok „obraz” ma 1 aktywny widok: „kafelek” utworzony w linii 41, kolumnie 15
+[ tip ] najpierw zwolnij widok: kafelek.release
+_________________________________________________________________
 ```
+
+| Element | Znaczenie |
+|---|---|
+| linia `*****` | początek **błędu** (ostrzeżenie zaczyna się linią `=====`) |
+| `ERROR: BML-E0412` / `WARNING: BML-W0110` | rodzaj i stały kod |
+| nazwa pliku, `at line N, column K` | dokładne miejsce |
+| linia kodu z `^` | fragment, którego dotyczy komunikat |
+| `[ ! ]` | **co** jest źle, jednym zdaniem |
+| `[ i ]` | **dlaczego**: szczegóły, powiązane miejsca, złamana zasada (opcjonalne) |
+| `[ tip ]` | **jak naprawić**: gotowy zapis do wpisania (opcjonalne) |
+| linia `_____` | koniec komunikatu |
+
+Ostrzeżenie ma tę samą budowę:
+
+```
+=================================================================
+WARNING: BML-W0110
+tekstura.bmol
+at line 24, column 5
+-----------------------------------------------------------------
+24 |     obraz.byte[n] = licznik
+   |     ^
+-----------------------------------------------------------------
+  [ ! ] Zapis 4 B przez soczewkę 1-bajtową .byte
+  [ i ] szerokość wyznacza typ zmiennej po drugiej stronie (sekcja 10)
+[ tip ] jeśli chodzi o 1 B, zamień typ jawnie: ... = licznik as byte
+_________________________________________________________________
+```
+
+**Błąd w działającym programie** (np. `HALT` z `.rangeError`, `.release` bloku z widokami) ma tę samą ramkę, tylko bez linii kodu, bo program nie ma już przy sobie źródła: plik, linia, `[ ! ]`, `[ i ]` z liczbami (numer bloku, pozycja, długość) i `[ tip ]`. Program kończy się wtedy kodem 70.
 
 **Forma dla agenta AI** (opcja kompilatora `-diagnostics=json`):
 
@@ -1526,6 +1631,7 @@ Każda akceptacja jest widoczna dokładnie tam, gdzie zapadła decyzja. Kod z wi
 | `ptr.<typ>` | bez indeksu: cały blok jako ciąg elementów (operacje blokowe) |
 | `ptr.<typ>.count` | liczba pełnych elementów typu w bloku |
 | `ptr.<Struktura>[n].pole` | pole struktury w n-tym elemencie, np. `ptr.Color[32].G` |
+| `n = INPUT.read[ptr]` | wypełnia blok kolejnymi bajtami wejścia programu; `n` = liczba przeczytanych bajtów, 0 = koniec danych (sekcja 3) |
 
 ### Widoki i kopie
 
@@ -1775,3 +1881,4 @@ potega.end
 - [ ] **Wyjście z kilku zagnieżdżonych pętli naraz.**
 - [ ] **Funkcje biblioteki tekstowej:** wyszukiwanie, wycinanie, zamiana liczb na tekst i odwrotnie, porównanie treści bloków.
 - [ ] **Środowisko programistyczne (BEMOLIZER):** szczegóły interfejsu (sekcja 23).
+- [ ] **Blokowanie bloku w pamięci fizycznej** (flaga bloku na wzór `VirtualLock` / `mlock`): przydzielona pamięć może zostać przeniesiona przez system do pliku wymiany; dla zadań czasu rzeczywistego (np. dźwięk na żywo) potrzebna byłaby gwarancja, że blok zawsze zostaje w pamięci RAM.
