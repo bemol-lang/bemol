@@ -23,6 +23,8 @@ Dokument jest też instrukcją dla każdego, kto będzie pisał kompilator BEMOL
 8. [Pliki mapowane](#8-pliki-mapowane)
 9. [Optymalizacje kompilatora](#9-optymalizacje-kompilatora)
 10. [Kompilacje cząstkowe i zależności](#10-kompilacje-cząstkowe-i-zależności)
+11. [Teksty w środku](#11-teksty-w-środku)
+12. [`switch`: tablica skoków](#12-switch-tablica-skoków)
 
 ---
 
@@ -46,29 +48,30 @@ Mnożenie przez 32 to przesunięcie bitowe o 5 pozycji, czyli jedna z najszybszy
 przesunięcie:  0               8               16      20  22  24              32
                ├───────────────┼───────────────┼───────┼───┼───┼───────────────┤
 zwykły blok:   │ adres         │ długość       │shares │flg│wid│ zarezerwowane │
+tekst (TEXT):  │ adres         │ pojemność     │shares │flg│wid│ dług. tekstu  │
 widok (VIEW):  │ przesunięcie  │ długość       │shares │flg│ 0 │rodzic │ opis  │
                └───────────────┴───────────────┴───────┴───┴───┴───────┴───────┘
                  8 B             8 B             4 B    2 B 2 B  4 B     4 B
 ```
 
-| Przesunięcie | Zwykły blok | Widok (`VIEW`) |
-|---|---|---|
-| 0 (8 B) | adres bloku w pamięci | przesunięcie widoku w rodzicu |
-| 8 (8 B) | długość w bajtach | długość widoku w bajtach |
-| 16 (4 B) | `.shares` | `.shares` widoku |
-| 20 (2 B) | flagi (16 bitów) | flagi |
-| 22 (2 B) | liczba widoków | 0 |
-| 24 (4 B) | zarezerwowane | numer rodzica |
-| 28 (4 B) | zarezerwowane | numer opisu prostokąta (0 = brak) |
+| Przesunięcie | Zwykły blok | Tekst (`TEXT`) | Widok (`VIEW`) |
+|---|---|---|---|
+| 0 (8 B) | adres bloku w pamięci | adres bloku | przesunięcie widoku w rodzicu |
+| 8 (8 B) | długość w bajtach | pojemność w bajtach | długość widoku w bajtach |
+| 16 (4 B) | `.shares` | `.shares` | `.shares` widoku |
+| 20 (2 B) | flagi (16 bitów) | flagi | flagi |
+| 22 (2 B) | liczba widoków | liczba widoków | 0 |
+| 24 (4 B) | zarezerwowane | długość tekstu (8 B, razem z następnym polem) | numer rodzica |
+| 28 (4 B) | zarezerwowane | | numer opisu prostokąta (0 = brak) |
 
-O tym, jak czytać pola, decyduje flaga `VIEW` (bit 2).
+O tym, jak czytać pola, decydują flagi `TEXT` (bit 5) i `VIEW` (bit 2). Obie korzystają z pola na przesunięciu 24, więc **wykluczają się nawzajem**: wpis jest albo tekstem, albo widokiem. Flagi, które tego pola nie używają (np. `MAPPED`), mogą łączyć się z każdym rodzajem.
 
 ### Flagi
 
 ```
 bit:  15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
       ─────────────────  ─────  ─  ─  ─  ─  ─  ─  ─  ─
-           wolne        range PRD DBG ·  MW MP VW PE GL
+           wolne        range PRD DBG TX MW MP VW PE GL
                         Error
 ```
 
@@ -79,7 +82,7 @@ bit:  15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
 | 2 | VW | `VIEW` |
 | 3 | MP | `MAPPED` |
 | 4 | MW | `MAPPED_WRITABLE` |
-| 5 | · | zarezerwowany |
+| 5 | TX | `TEXT` |
 | 6 | DBG | `DEBUG_MEMORY_PATTERN` |
 | 7 | PRD | `PRODUCTION_MEMORY_PATTERN` |
 | 8–9 | rangeError | tryb: 0 = DEFAULT, 1 = CONTINUE, 2 = WARNING, 3 = HALT |
@@ -454,3 +457,86 @@ Programista dodaje do `Color` pole. Rozmiar struktury zmienia się z 10 na 12 ba
 - `zapiszPlik` → zostaje bez zmian, z `.bemol-cache/`.
 
 **`-finalbake`** wykorzystuje cząstki, ale optymalizuje cały program od nowa: wkleja małe funkcje w miejsca wywołań i usuwa niepotrzebny kod między funkcjami, czego przy osobnej kompilacji nie da się zrobić.
+
+---
+
+## 11. Teksty w środku
+
+Tekst to zwykły blok z flagą `TEXT`. Różnica polega tylko na tym, jak menedżer czyta dwa pola wpisu:
+
+```
+t as text
+t.new[16]
+t = "abc"
+```
+
+| Pole wpisu | Wartość |
+|---|---|
+| adres | początek bloku |
+| przesunięcie 8: pojemność | 16 |
+| przesunięcie 24: długość tekstu | 3 |
+| flagi | `TEXT` |
+
+```
+adres + 0  → 'a'
+adres + 1  → 'b'
+adres + 2  → 'c'
+adres + 3  → koniec tekstu (długość tekstu = 3)
+adres + 15 → ostatni bajt pojemności
+```
+
+Tekst zawsze zaczyna się od bajtu 0, więc przesunięcie końca tekstu jest równe jego długości. Odczyt `t.length` to jeden odczyt 8 bajtów z wpisu, bez szukania znaku końca jak w C.
+
+**`t.append["def"]` krok po kroku:**
+
+```
+1. potrzeba = długość tekstu + 3 = 6
+2. czy potrzeba ≤ pojemność (16)?  tak
+3. skopiuj 3 bajty pod adres + 3
+4. długość tekstu = 6
+```
+
+Gdy potrzeba przekracza pojemność, przed krokiem 3 wykonywane jest `.update[potrzeba]`: blok rośnie dokładnie do potrzebnego rozmiaru (może zostać przeniesiony, wtedy zmienia się adres we wpisie).
+
+**Porównanie `a == b` dla tekstów:**
+
+```
+1. czy długość tekstu a == długość tekstu b?  nie → wynik 0 (natychmiast)
+2. porównaj bajty (instrukcjami wektorowymi, po 16–32 bajty naraz)
+```
+
+Większość różnych tekstów różni się długością, więc zwykle porównanie kończy się w kroku 1.
+
+---
+
+## 12. `switch`: tablica skoków
+
+Wartości w `case` są stałe, więc kompilator zna je podczas kompilacji i może zbudować **tablicę skoków**: dla każdej możliwej wartości adres gałęzi, która ma się wykonać.
+
+```
+switch kanal
+    case 5          # gałąź A
+    case 1 to 10    # gałąź B
+    else            # gałąź C
+switch.end
+```
+
+Kompilator przypisuje każdą wartość do **pierwszej pasującej gałęzi** (kolejność od góry):
+
+| Wartość | Gałąź |
+|---|---|
+| 1, 2, 3, 4 | B |
+| 5 | A (pierwsza pasująca) |
+| 6, 7, 8, 9, 10 | B |
+| pozostałe | C |
+
+W działającym programie `switch` to wtedy:
+
+```
+1. czy kanal mieści się w zakresie tablicy (1–10)?  nie → gałąź C
+2. skocz pod adres z tablicy[kanal - 1]
+```
+
+Jedno porównanie i jeden skok, niezależnie od liczby gałęzi. Gdy wartości są bardzo rozrzucone (np. `case 1` i `case 1000000`), kompilator zamiast ogromnej tablicy używa serii porównań albo wyszukiwania binarnego. Wynik jest zawsze ten sam, różni się tylko sposób wykonania.
+
+Przy tym samym przypisywaniu kompilator wykrywa gałęzie martwe (żadna wartość nie trafia do gałęzi) i nakładanie się zakresów, i zgłasza odpowiednie ostrzeżenia.

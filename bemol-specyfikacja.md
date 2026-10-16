@@ -16,27 +16,31 @@ BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. D
 1. [Filozofia](#1-filozofia)
 2. [Tryby kompilacji](#2-tryby-kompilacji)
 3. [Składnia ogólna](#3-składnia-ogólna)
-4. [Typy, rozmiary i arytmetyka](#4-typy-rozmiary-i-arytmetyka)
-5. [Literały](#5-literały)
-6. [Typ `pointer`](#6-typ-pointer)
-7. [Cykl życia bloku](#7-cykl-życia-bloku)
-8. [Menedżer pamięci](#8-menedżer-pamięci)
-9. [Soczewki: pozycja i szerokość](#9-soczewki-pozycja-i-szerokość)
-10. [Odłamki: niepełne elementy](#10-odłamki-niepełne-elementy)
-11. [Operacje blokowe](#11-operacje-blokowe)
-12. [Operacje bitowe i inne operacje wbudowane](#12-operacje-bitowe-i-inne-operacje-wbudowane)
-13. [Widoki i kopie fragmentów](#13-widoki-i-kopie-fragmentów)
-14. [Pliki mapowane (`.map`)](#14-pliki-mapowane-map)
-15. [Struktury (`STRUCT`)](#15-struktury-struct)
-16. [Aliasy (`ALIAS`)](#16-aliasy-alias)
-17. [Wyjście poza blok: `.rangeError`](#17-wyjście-poza-blok-rangeerror)
-18. [Ostrzeżenia i komunikaty błędów](#18-ostrzeżenia-i-komunikaty-błędów)
-19. [Zestawienie operacji na `pointer`](#19-zestawienie-operacji-na-pointer)
-20. [Kompilator](#20-kompilator)
-21. [Język a biblioteka standardowa](#21-język-a-biblioteka-standardowa)
-22. [Obiekty: klasy uproszczone](#22-obiekty-klasy-uproszczone)
-23. [Przykładowy program](#23-przykładowy-program)
-24. [Otwarte pytania](#24-otwarte-pytania)
+4. [Instrukcje sterujące](#4-instrukcje-sterujące)
+5. [Typy, rozmiary i arytmetyka](#5-typy-rozmiary-i-arytmetyka)
+6. [Literały](#6-literały)
+7. [Typ `pointer`](#7-typ-pointer)
+8. [Cykl życia bloku](#8-cykl-życia-bloku)
+9. [Menedżer pamięci](#9-menedżer-pamięci)
+10. [Soczewki: pozycja i szerokość](#10-soczewki-pozycja-i-szerokość)
+11. [Odłamki: niepełne elementy](#11-odłamki-niepełne-elementy)
+12. [Operacje blokowe](#12-operacje-blokowe)
+13. [Operacje bitowe i inne operacje wbudowane](#13-operacje-bitowe-i-inne-operacje-wbudowane)
+14. [Widoki i kopie fragmentów](#14-widoki-i-kopie-fragmentów)
+15. [Pliki mapowane (`.map`)](#15-pliki-mapowane-map)
+16. [Struktury (`STRUCT`)](#16-struktury-struct)
+17. [Aliasy (`ALIAS`)](#17-aliasy-alias)
+18. [Teksty (`text`)](#18-teksty-text)
+19. [Wyjście poza blok: `.rangeError`](#19-wyjście-poza-blok-rangeerror)
+20. [Ostrzeżenia i komunikaty błędów](#20-ostrzeżenia-i-komunikaty-błędów)
+21. [Zestawienie operacji na `pointer`](#21-zestawienie-operacji-na-pointer)
+22. [Kompilator](#22-kompilator)
+23. [Narzędzia](#23-narzędzia)
+24. [Język a biblioteka standardowa](#24-język-a-biblioteka-standardowa)
+25. [Obiekty: klasy uproszczone](#25-obiekty-klasy-uproszczone)
+26. [Zalecany styl](#26-zalecany-styl)
+27. [Przykładowy program](#27-przykładowy-program)
+28. [Otwarte pytania](#28-otwarte-pytania)
 
 ---
 
@@ -58,13 +62,15 @@ BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. D
 
 **Nic kosztownego nie dzieje się bez wiedzy programisty.** Kontrole i pomoce (wzory pamięci, ostrzeżenia, `HALT`) programista włącza świadomie, a w finalnym programie może je wyłączyć tam, gdzie liczy się każdy cykl.
 
-**Błąd mówi co, gdzie, dlaczego i jak naprawić.** Komunikaty kompilatora i programu są przejrzyste dla człowieka i jednoznaczne dla agenta AI (sekcja 18).
+**Błąd mówi co, gdzie, dlaczego i jak naprawić.** Komunikaty kompilatora i programu są przejrzyste dla człowieka i jednoznaczne dla agenta AI (sekcja 20).
 
 **Proste dla człowieka na zewnątrz, optymalne dla maszyny w środku.** Programista opisuje, czego chce, a rachunek przesunięć i adresów wykonują kompilator i menedżer pamięci. Jak to działa w środku, opisuje osobny dokument [**bemol-wnetrze.md**](bemol-wnetrze.md): im lepiej programista rozumie wnętrze języka, tym lepiej rozumie narzędzie, którym pracuje.
 
 **Kolejność bajtów: little-endian.** Bajt 0 jest najmniej znaczący. Blok czytamy jak zapis binarny, „od prawej do lewej”. To naturalny porządek procesorów x86 i ARM.
 
 **Indeksowanie od zera.**
+
+**Każda nietypowa decyzja ma uzasadnienie.** Tam, gdzie BEMOL robi coś inaczej niż popularne języki, specyfikacja zawiera ramkę **„Dlaczego tak?”**: programista dostaje nie tylko regułę, ale i powód, często wynikający z błędów, które latami utrudniały życie w C, C++ czy Javie.
 
 ---
 
@@ -82,7 +88,7 @@ W środowisku programistycznym te same tryby wybiera się z menu.
 Programista może jedynie **sprawdzić** tryb przez wbudowaną stałą tylko do odczytu:
 
 ```
-if BUILD_MODE = TEST then
+if BUILD_MODE == TEST then
     wypiszStanPamieci()
 if.end
 ```
@@ -97,10 +103,39 @@ if.end
 
 Język rozróżnia wielkość liter.
 
-- **Słowa kluczowe budujące strukturę programu lub decydujące o życiu zmiennych piszemy WIELKIMI literami** (wymagane): `MAIN`, `BEGIN`, `END`, `CLASS`, `FUNCTION`, `STRUCT`, `GLOBAL`, `PERSISTENT`, `CONST`, `ALIAS`, `PRIVATE`.
-- **Słowa przepływu sterowania, operatory, funkcje wbudowane i łączniki piszemy małymi literami:** `for`, `to`, `do`, `if`, `then`, `as`, `return`, `this`, `and`, `or`, `xor`, `not`, `shl`, `shr`, `rol`, `ror`, `saturate`.
+- **Słowa kluczowe budujące strukturę programu lub decydujące o życiu zmiennych piszemy WIELKIMI literami** (wymagane): `MAIN`, `BEGIN`, `END`, `CLASS`, `FUNCTION`, `STRUCT`, `ENUM`, `GLOBAL`, `PERSISTENT`, `CONST`, `REF`, `ALIAS`, `PRIVATE`.
+- **Słowa przepływu sterowania, operatory, funkcje wbudowane i łączniki piszemy małymi literami:** `if`, `then`, `elseif`, `else`, `for`, `to`, `step`, `do`, `while`, `repeat`, `until`, `foreach`, `in`, `break`, `continue`, `switch`, `case`, `as`, `return`, `this`, `and`, `or`, `xor`, `not`, `shl`, `shr`, `rol`, `ror`, `saturate`.
 - **Wieloczłonowe nazwy wbudowane w język** piszemy z wielką literą na początku kolejnych słów: `rangeError`, `copyPortion`, `viewRectangle`.
-- **Nazwy zmiennych, funkcji i klas programisty są dowolne.**
+- **Polecenia dla kompilatora** zaczynają się od `@` (np. `@ACCEPT`, sekcja 20). Znak `@` jest zarezerwowany dla nich: od razu widać, co jest logiką programu, a co instrukcją dla narzędzi.
+- **Nazwy zmiennych, funkcji, klas, stałych i wartości wyliczeń programisty są dowolne.** Zalecenia stylu: sekcja 26.
+
+### Komentarze
+
+Komentarz zaczyna się od `#` i trwa do końca linii:
+
+```
+licznik = 0          # zerowanie licznika
+```
+
+### Separatory instrukcji
+
+**Instrukcję kończy koniec linii albo `;`.** Średnik pozwala zapisać kilka instrukcji w jednej linii:
+
+```
+a = 1; b = 2; c = 3
+if x > 5 then y = 1; if.end
+```
+
+- `;` na końcu linii jest dozwolone, ale zbędne. Kto przyjdzie z C i odruchowo je postawi, nie dostanie błędu,
+- pusty `;` (np. `;;`) nie jest błędem, ale środowisko podpowiada, że jest zbędny,
+- **długie wyrażenie można przenieść do następnej linii**, gdy linia kończy się operatorem, przecinkiem lub otwartym nawiasem:
+
+```
+wynik = pierwsza_wartosc + druga_wartosc +
+        trzecia_wartosc
+kafelek = obraz.viewRectangle[100*Color, 50,
+                              64*Color, 64, SZER*Color]
+```
 
 ### Zamykanie bloków
 
@@ -124,11 +159,14 @@ CLASS Calculate
 Calculate.end
 ```
 
-**Wyjątek:** program główny ma wyróżnione granice `MAIN BEGIN` / `MAIN END`, żeby od razu rzucały się w oczy.
+**Wyjątki:**
+
+- program główny ma wyróżnione granice `MAIN BEGIN` / `MAIN END`, żeby od razu rzucały się w oczy,
+- pętlę `repeat` zamyka linia `until warunek` (sekcja 4), bo czyta się jak zdanie.
 
 ### Układ pliku
 
-`GLOBAL`, `CONST`, `STRUCT`, `ALIAS`, `CLASS` i `FUNCTION` mogą stać **w dowolnym miejscu pliku, poza MAIN i poza funkcjami**. Kompilator najpierw zbiera wszystkie deklaracje z całego pliku, więc kolejność nie ma znaczenia. Funkcje mogą stać pod programem głównym.
+`GLOBAL`, `CONST`, `STRUCT`, `ENUM`, `ALIAS`, `CLASS` i `FUNCTION` mogą stać **w dowolnym miejscu pliku, poza MAIN i poza funkcjami**. Kompilator najpierw zbiera wszystkie deklaracje z całego pliku, więc kolejność nie ma znaczenia. Funkcje mogą stać pod programem głównym.
 
 Zalecany styl (niewymagany):
 
@@ -158,6 +196,28 @@ CONST ROZMIAR as int = 1024        # stała
 
 **Stałe `CONST`** mają zawsze jawny typ. Są wyliczane podczas kompilacji i wbudowywane w kod jako gotowe wartości. Muszą być jednoznaczne: zależność od wartości znanej dopiero w czasie działania albo zapętlona zależność (`A` zależy od `B`, a `B` od `A`) to błąd kompilacji. Kompilator sam ustala kolejność wyliczania stałych zależnych od siebie.
 
+### Zasięg zmiennych
+
+**1. Zmienna żyje od deklaracji do końca bloku, w którym ją zadeklarowano.** Blokiem jest funkcja, `MAIN`, każde `if`, `for`, `while`, `foreach`, `repeat` i gałąź `case`:
+
+```
+for i = 0 to 100 do
+    x as doublefloat = i * 0.01
+    ...
+for.end
+# tu ani i, ani x już nie istnieją
+```
+
+**2. W funkcji zmienną trzeba zadeklarować przed użyciem.** Swoboda kolejności dotyczy tylko deklaracji na poziomie pliku. Wewnątrz funkcji kod czyta się z góry na dół.
+
+**3. Bez przesłaniania nazw.** Zmienna wewnętrzna nie może mieć tej samej nazwy co zmienna z bloku zewnętrznego, parametr funkcji czy zmienna `GLOBAL`. To błąd kompilacji.
+
+> **Dlaczego bez przesłaniania?** W C i C++ zmienna wewnętrzna może mieć tę samą nazwę co zewnętrzna i ją „przykryć”. Programista zmienia wtedy inną zmienną, niż myśli. W BEMOL-u jedna nazwa w danym miejscu oznacza zawsze jedną rzecz.
+
+**4. Koniec bloku to koniec życia bloku pamięci.** Zmienna `pointer` zadeklarowana w bloku kodu zmniejsza `.shares` przy jego `.end`. Jeśli nikt inny jej nie trzyma (i nie ma widoków), pamięć jest zwalniana dokładnie w tym miejscu, widocznym w kodzie.
+
+**5. Zmienne zadeklarowane w pętli powstają w każdym obrocie od nowa.** Dla liczb nic to nie kosztuje. `.new` wewnątrz pętli oznacza jednak przydział pamięci w każdym obrocie, więc kompilator zgłasza informację z podpowiedzią: przenieś deklarację przed pętlę albo użyj `PERSISTENT`.
+
 ### Funkcje
 
 ```
@@ -172,14 +232,209 @@ potega.end
 
 Wartość zwraca się zwykłym `return`. Metody klasy zapisuje się z kropką na początku nazwy (`FUNCTION .multiply(...)`).
 
+### Przekazywanie parametrów
+
+**1. Zmienne statyczne (`int`, `float`, `STRUCT`...) są kopiowane.** Funkcja nie może przypadkiem zmienić zmiennej wywołującego. Kopiowanie liczb jest praktycznie darmowe, bo trafiają do rejestrów procesora.
+
+```
+FUNCTION podwoj(x as int): int
+    x = x * 2          # zmienia tylko lokalną kopię
+    return x
+podwoj.end
+```
+
+**2. Bloki (`pointer`, `text`) są przekazywane wskaźnikiem.** Kopiowany jest tylko 4-bajtowy numer bloku, nigdy dane. Funkcja pracuje na tym samym bloku co wywołujący, więc zmiany danych są widoczne na zewnątrz.
+
+```
+FUNCTION rozjasnij(obraz as pointer): void
+    obraz.byte = saturate(obraz.byte + 20)    # zmienia dane wywołującego
+rozjasnij.end
+```
+
+**3. `CONST` przy parametrze: blok tylko do odczytu.** Każda próba zapisu do takiego bloku w funkcji to błąd kompilacji. Wywołujący ma gwarancję, że funkcja nie zmieni jego danych, a kompilator może śmielej optymalizować.
+
+```
+FUNCTION suma(CONST dane as pointer): doublefloat
+```
+
+**4. `REF`: gdy funkcja ma zmienić zmienną wywołującego.** `REF` jest wymagane **także w miejscu wywołania**:
+
+```
+FUNCTION zamien(REF a as int, REF b as int): void
+    t as int = a; a = b; b = t
+zamien.end
+
+zamien(REF x, REF y)
+```
+
+> **Dlaczego `REF` także przy wywołaniu?** W C++ zapis `f(x)` nie mówi, czy `x` się zmieni: trzeba zajrzeć do deklaracji funkcji. W BEMOL-u widać to w miejscu wywołania.
+
+**5. Kilka wartości zwracanych naraz:**
+
+```
+FUNCTION minmax(CONST dane as pointer): int, int
+    ...
+    return najmniejsza, najwieksza
+minmax.end
+
+mn, mx = minmax(pomiary)
+```
+
+To czytelniejsze niż zwracanie wyników przez `REF`. `REF` zostaje dla przypadków, gdy funkcja zmienia istniejącą wartość, a nie produkuje nową.
+
 ### Stos i sterta
 
 - **Zmienne statyczne, o stałym rozmiarze** (`int`, `float`, `byte`...), trafiają na **stos**. Procesor przydziela i zwalnia dla nich miejsce jedną instrukcją przy wejściu do funkcji i wyjściu z niej, więc kosztują praktycznie zero. Każde wywołanie funkcji, także rekurencyjne, ma własne kopie.
-- **Zmienne `pointer`** mają blok na **stercie** i wpis w menedżerze pamięci (sekcja 8).
+- **Zmienne `pointer`** mają blok na **stercie** i wpis w menedżerze pamięci (sekcja 9).
 
 ---
 
-## 4. Typy, rozmiary i arytmetyka
+## 4. Instrukcje sterujące
+
+### Porównania
+
+| Operator | Znaczenie |
+|---|---|
+| `==` | równe |
+| `!=` | różne |
+| `<` `>` | mniejsze / większe |
+| `<=` `>=` | mniejsze lub równe / większe lub równe |
+
+**`=` zawsze oznacza przypisanie, `==` zawsze porównanie.** Przypisanie jest osobną instrukcją i nie może stać wewnątrz wyrażenia, więc `if x = 5 then` jest błędem kompilacji z podpowiedzią „czy chodziło o `==`?”.
+
+> **Dlaczego przypisanie nie może stać w warunku?** W C zapis `if (x = 5)` jest poprawny: przypisuje 5 i zawsze jest prawdziwy. To jeden z najsłynniejszych błędów w historii programowania. W BEMOL-u nie da się go popełnić.
+
+**Wynik porównania ma typ `bit`** (0 lub 1). Szerokość porównywanych wartości wyznaczają te same reguły co wszędzie (sekcja 10).
+
+### Operatory logiczne
+
+`and`, `or`, `not` to te same słowa co dla operacji bitowych (sekcja 13). Na wartościach typu `bit`, czyli wynikach porównań, działają po prostu jak operatory logiczne.
+
+- **Warunek w `if`, `while`, `until` itd. musi mieć typ `bit`.** Zapis `if licznik then` przy `licznik as int` jest błędem, trzeba napisać `if licznik != 0 then`. Zero zgadywania, co autor miał na myśli.
+- **Skracanie obliczeń:** w `if a > 0 and ptr.byte[a] == 5 then` drugi warunek nie jest sprawdzany, gdy pierwszy jest fałszywy (analogicznie dla `or`, gdy pierwszy jest prawdziwy). To chroni np. przed odczytem spod złego indeksu.
+
+### Warunki: `if`
+
+```
+if temperatura > 30 then
+    stan = GORACO
+elseif temperatura > 15 then
+    stan = CIEPLO
+else
+    stan = ZIMNO
+if.end
+```
+
+- `elseif` to jedno słowo, więc cały łańcuch zamyka jedno `if.end`,
+- `then` jest obowiązkowe,
+- **`if.end` zawsze, także dla jednej linii**: `if x > 5 then y = 1; if.end`.
+
+> **Dlaczego zawsze `if.end`?** W C brak wyraźnego zamknięcia prowadzi do pomyłek, do którego `if` należy `else`, i do błędów, gdy ktoś dopisze drugą linię do „jednolinijkowego” warunku. Jedna forma, zero wątpliwości.
+
+### Pętla `for`: licznik od–do
+
+```
+for i = 0 to 9 do ... for.end                  # 0, 1, ..., 9 (koniec włącznie)
+for i = 0 to 100 step 5 do ... for.end         # 0, 5, 10, ..., 100
+for i = 10 to 0 step -1 do ... for.end         # w dół
+```
+
+- bez `step` krok wynosi 1; gdy początek jest większy od końca, pętla wykonuje się zero razy (liczenie w dół wymaga jawnego `step -1`),
+- zmienna pętli tworzy się sama, istnieje tylko w pętli i ma typ `longint`, żeby indeks nie skończył się przy blokach większych niż 2 GB,
+- **początek, koniec i krok muszą być liczbami całkowitymi.** Wartość ułamkową liczy się w środku pętli z licznika:
+
+```
+for i = 0 to 100 do
+    x as doublefloat = i * 0.01      # 0, 0.01, ..., 1
+    ...
+for.end
+```
+
+> **Dlaczego `for` przyjmuje tylko liczby całkowite?**
+> Liczby takie jak 0.01 nie dają się zapisać w systemie dwójkowym dokładnie, tak jak 1/3 w dziesiętnym. Gdy pętla co obrót dodaje ułamkowy krok, błędy się sumują: po stu krokach 0.01 wychodzi 0.99999999999999 albo 1.00000000000001. W językach, które na to pozwalają (C, C++, Java, JavaScript), pętla „od 0 do 1 co 0.01” wykonuje się raz 100, a raz 101 razy, zależnie od kierunku błędu. To jeden z trudniejszych do znalezienia błędów.
+> W BEMOL-u licznik pętli jest zawsze liczbą całkowitą, więc liczba obrotów jest dokładna i widoczna w kodzie. Wartość ułamkowa liczona z licznika (`x = i * 0.01`) jest wyliczana za każdym razem od nowa, więc błąd się nie kumuluje.
+
+Zapis `for x = 0 to 1 step 0.01` to błąd kompilacji z podpowiedzią, jak go przepisać.
+
+### Pętla `while`: warunek na początku
+
+```
+while pozycja < koniec do
+    ...
+while.end
+```
+
+### Pętla `repeat ... until`: warunek na końcu
+
+Wnętrze wykona się co najmniej raz. Linia `until warunek` zamyka blok:
+
+```
+repeat
+    odczytajPakiet()
+until koniecDanych
+```
+
+### Pętla `foreach`: po każdym elemencie soczewki
+
+Najważniejsza pętla BEMOL-a:
+
+```
+foreach px in obraz.Color do
+    px.R = 255 - px.R
+foreach.end
+
+foreach px, i in kafelek.Color do      # z numerem elementu
+    ...
+foreach.end
+```
+
+- **`px` nie jest kopią, tylko nazwą elementu w bloku**, jak alias. Zapis do `px.R` zmienia dane w bloku,
+- działa na blokach, widokach paskowych i prostokątnych (przy prostokącie kompilator sam przechodzi wiersz po wierszu),
+- kompilator wie, że iteracje dotyczą kolejnych elementów, więc łatwo zamienia pętlę na instrukcje wektorowe.
+
+### Przerywanie pętli
+
+- `break` wychodzi z pętli,
+- `continue` przechodzi do następnego obrotu.
+
+Oba działają na najbliższą pętlę. Wyjście z kilku zagnieżdżonych pętli naraz: do ustalenia (sekcja 28).
+
+### Wybór: `switch` / `case`
+
+```
+switch kanal
+    case 0
+        nazwa = CZERWONY
+    case 1, 2
+        nazwa = ZIELONY_LUB_NIEBIESKI
+    case 10 to 20
+        nazwa = ZAKRES
+    else
+        nazwa = NIEZNANY
+switch.end
+```
+
+- **bez „przelatywania”**: każdy `case` kończy się sam, gdy zaczyna się kolejny, więc nie ma `break`. Kilka wartości po przecinku, zakres przez `to`,
+- **wartości w `case` muszą być stałe** (literały albo `CONST`). Kompilator zamienia `switch` na tablicę skoków, czyli jeden skok zamiast serii porównań,
+- **tylko liczby całkowite, `bit` i wartości `ENUM`**, bez floatów (porównanie na równość liczb zmiennoprzecinkowych jest zawodne),
+- **`else` jest opcjonalne**; gdy nic nie pasuje i nie ma `else`, nic się nie dzieje.
+
+**Nakładające się wartości: pierwsza pasująca gałąź wygrywa** (kolejność od góry do dołu). Kompilator i tak przypisuje każdą wartość do gałęzi podczas kompilacji, więc nie kosztuje to nic. Ostrzeżenia:
+
+- **szczególny przypadek przed ogólnym** (`case 5`, potem `case 1 to 10`): ostrzeżenie informacyjne, że 5 należy do obu gałęzi i wykona się pierwsza. Często to celowy wzorzec,
+- **gałąź martwa** (`case 1 to 10`, potem `case 5`): mocniejsze ostrzeżenie, że `case 5` nigdy się nie wykona. Prawie zawsze to pomyłka.
+
+**Kompletność przy `ENUM`:** gdy `switch` na wyliczeniu nie obsługuje wszystkich wartości i nie ma `else`, kompilator ostrzega: „brak obsługi wartości GORACO”. Po dodaniu nowej wartości do wyliczenia kompilator wskaże wszystkie miejsca do uzupełnienia.
+
+Ostrzeżenie, które programista uznaje za zamierzone, potwierdza jawnie przez `@ACCEPT` (sekcja 20).
+
+> **Dlaczego `case` nie „przelatuje” dalej?** W C, C++ i Javie po wykonaniu gałęzi program przechodzi do następnej, chyba że programista napisze `break`. Zapomniany `break` to jeden z najczęstszych błędów w tych językach, a celowe przelatywanie zdarza się rzadko. W BEMOL-u każda gałąź kończy się sama, a kilka wartości dla jednej gałęzi zapisuje się jawnie: `case 1, 2`.
+
+> Jak to działa w środku: [bemol-wnetrze.md, rozdział 12 (`switch` jako tablica skoków)](bemol-wnetrze.md#12-switch-tablica-skoków)
+
+---
+
+## 5. Typy, rozmiary i arytmetyka
 
 Rozmiary są stałe i zdefiniowane przez język, niezależnie od procesora.
 
@@ -196,7 +451,7 @@ Rozmiary są stałe i zdefiniowane przez język, niezależnie od procesora.
 | zmiennoprzecinkowe | `halffloat` | 2 B |
 | | `float` | 4 B |
 | | `doublefloat` | 8 B |
-| struktura | `STRUCT` | suma pól, zaokrąglona do pełnego bajtu (sekcja 15) |
+| struktura | `STRUCT` | suma pól, zaokrąglona do pełnego bajtu (sekcja 16) |
 
 Nazwy `byte`, `shortint`, `int` i `longint` to wygodne nazwy najczęstszych przypadków ogólnej reguły `unsigned_N` / `signed_N`. Poza tym język nie ma synonimów typów (np. nie ma `integer` obok `int`), żeby kod w jednym projekcie wyglądał jednolicie.
 
@@ -210,7 +465,7 @@ probka as signed_24          # dźwięk 24-bitowy: -8 388 608 – 8 388 607
 ```
 
 - **jako zmienna**: zajmuje w pamięci tyle pełnych bajtów, ile potrzeba (`unsigned_14` zajmuje 2 bajty, `signed_24` 3 bajty), ale przyjmuje tylko wartości ze swojego zakresu i zawija się na N bitach,
-- **w strukturze**: zajmuje dokładnie N bitów (sekcja 15),
+- **w strukturze**: zajmuje dokładnie N bitów (sekcja 16),
 - **jako soczewka**: `ptr.unsigned_12[n]` to element nr n, czyli pozycja n × 12 bitów. Działa, ale wolniej, bo elementy nie leżą na granicach bajtów.
 
 Zapis z podkreślnikiem, a nie `unsigned[N]`, bo nawias kwadratowy oznacza pozycję w soczewce: `ptr.unsigned_12[5]` jest jednoznaczne, a `ptr.unsigned[12][5]` nie byłoby.
@@ -268,7 +523,7 @@ duzy = 2147483647 + 1         # → -2147483648
 
 Programista zna pojemność swoich zmiennych, więc świadome przepełnienie jest jego decyzją. Brak sprawdzania oznacza zero kosztu przy każdym działaniu. Dla typów zmiennoprzecinkowych przepełnienie daje nieskończoność, zgodnie ze standardem procesora.
 
-**`.rangeError` nie dotyczy zmiennych statycznych**, tylko bloków (sekcja 17).
+**`.rangeError` nie dotyczy zmiennych statycznych**, tylko bloków (sekcja 19).
 
 ### Nasycenie: `saturate( )`
 
@@ -307,9 +562,35 @@ wynik = -3.7      # -3
 
 Gdy część całkowita jest za duża dla typu, zostaje tyle, ile się mieści.
 
+### Wyliczenia: `ENUM`
+
+```
+ENUM Stan { ZIMNO, CIEPLO, GORACO }                   # wartości 0, 1, 2
+ENUM Kanal as byte { R = 0, G = 1, B = 2, A = 3 }     # jawny typ i wartości
+```
+
+- **wartości** domyślnie rosną od 0, ale można je podać jawnie (przydatne przy formatach plików),
+- **typ** można podać jawnie (`as byte`). Bez tego kompilator wybiera najmniejszy typ bez znaku, w którym mieszczą się wszystkie wartości, zgodnie z regułą dla literałów dziesiętnych. Wyliczenie ma więc szerokość i działa też jako soczewka: `ptr.Kanal[5]`,
+- **użycie:** pełna nazwa `Stan.GORACO`, a tam, gdzie typ jest oczywisty (przypisanie do zmiennej typu `Stan`, `case`), wystarczy samo `GORACO`,
+- `switch` na wyliczeniu sprawdza kompletność (sekcja 4).
+
+```
+s as Stan = GORACO
+switch s
+    case ZIMNO
+        ...
+    case CIEPLO, GORACO
+        ...
+switch.end
+```
+
+### Teksty
+
+Typ `text` to blok pamięci przechowujący tekst UTF-8. Opis: sekcja 18.
+
 ---
 
-## 5. Literały
+## 6. Literały
 
 **Literał** to wartość zapisana wprost w kodzie. Jego szerokość jest zawsze znana podczas kompilacji.
 
@@ -328,7 +609,7 @@ Gdy część całkowita jest za duża dla typu, zostaje tyle, ile się mieści.
 > **Kolejność bajtów w przykładach:** w całej specyfikacji zawartość pamięci pokazywana jest **w kolejności adresów, od bajtu 0**. Liczba `&0100h` (256) leży więc w pamięci jako `00 01`: bajt 0 = `00` (mniej znaczący), bajt 1 = `01`. Czytając tę samą liczbę jak zapis binarny, od prawej do lewej, widzimy `01 00`. Obie formy opisują te same dane.
 
 > ⚠️ **Literały dziesiętne mają szerokość zależną od wartości.**
-> Z soczewką przyjmują szerokość soczewki (sekcja 9). **Bez soczewki i bez zmiennej** (np. w `.fill` czy `.value =`) zajmują **tyle pełnych bajtów, ile potrzeba dla ich wartości**:
+> Z soczewką przyjmują szerokość soczewki (sekcja 10). **Bez soczewki i bez zmiennej** (np. w `.fill` czy `.value =`) zajmują **tyle pełnych bajtów, ile potrzeba dla ich wartości**:
 >
 > | Literał | Szerokość |
 > |---|---|
@@ -343,7 +624,7 @@ Gdy część całkowita jest za duża dla typu, zostaje tyle, ile się mieści.
 
 ---
 
-## 6. Typ `pointer`
+## 7. Typ `pointer`
 
 `pointer` to zmienna wskazująca na blok pamięci przydzielany dynamicznie. Daje dostęp do każdego bajtu i bitu bloku i jest objęta automatycznym zarządzaniem pamięcią.
 
@@ -377,7 +658,7 @@ Dzięki temu **bloki nigdy nie tworzą cykli** (A trzyma B, a B trzyma A), a lic
 
 ---
 
-## 7. Cykl życia bloku
+## 8. Cykl życia bloku
 
 ### `.new` — rejestracja
 
@@ -407,7 +688,7 @@ ptr.viewPortion[stary:ptr.length-stary].clear    # zeruje tylko nowo dodaną cz�
 
 Zwalnia blok i ustawia `.length` na 0. **Rejestracja zmiennej przeżywa `.release`**: inna część programu, która trzyma tę zmienną, nie dostaje wskaźnika donikąd, tylko widzi `.length = 0`, a odczyt zachowuje się zgodnie z `.rangeError`.
 
-**Bloku, na który patrzą widoki, nie można zwolnić** (sekcja 13). Najpierw trzeba zwolnić widoki.
+**Bloku, na który patrzą widoki, nie można zwolnić** (sekcja 14). Najpierw trzeba zwolnić widoki.
 
 ```
 .new  ──►  [ .update  ⇄  .release ]  ──►  koniec życia zmiennej
@@ -440,14 +721,14 @@ ptr.memoryPatternDebug = ON
 ptr.memoryPatternProduction = OFF
 ```
 
-**Działanie:** przy `.new` menedżer odczytuje ustawienia domyślne programu i zapisuje je we flagach wpisu (bity 6 i 7, sekcja 8). Ustawienie lokalne nadpisuje domyślne:
+**Działanie:** przy `.new` menedżer odczytuje ustawienia domyślne programu i zapisuje je we flagach wpisu (bity 6 i 7, sekcja 9). Ustawienie lokalne nadpisuje domyślne:
 
 - ustawione **przed `.new`**: kompilator je zapamiętuje i stosuje przy rejestracji,
 - ustawione **po `.new`**: działa przy kolejnym `.update`.
 
 **Bajt wzoru jest jeden dla całego programu.** We flagach wpisu jest miejsce tylko na włączone/wyłączone, więc pojedyncza zmienna może jedynie włączyć lub wyłączyć wypełnianie.
 
-Wzory nigdy nie są stosowane do plików mapowanych (sekcja 14), bo nadpisałyby dane z dysku.
+Wzory nigdy nie są stosowane do plików mapowanych (sekcja 15), bo nadpisałyby dane z dysku.
 
 ### Zmienne `pointer` w funkcjach: `PERSISTENT`
 
@@ -473,7 +754,7 @@ przetwarzaj.end
 
 ---
 
-## 8. Menedżer pamięci
+## 9. Menedżer pamięci
 
 ### Tablica przydziałów
 
@@ -486,11 +767,22 @@ Menedżer pamięci to **tablica dynamiczna**, w której każdy wiersz opisuje je
 | 16 | shares | 4 B | liczba zmiennych trzymających blok |
 | 20 | flagi | 2 B (16 bitów) | cechy serwisowe bloku, tabela poniżej |
 | 22 | liczba widoków | 2 B | ile widoków patrzy na ten blok (do 65 535) |
-| 24 | zarezerwowane | 8 B | jeden ciągły zapas na przyszłość |
+| 24 | pole zależne od rodzaju wpisu | 8 B | znaczenie wyznacza flaga, tabela poniżej |
 
-**Wpis ma 32 bajty.** Pola leżą w naturalnym porządku, bez dziur, a cały zapas to **8 bajtów w jednym kawałku na końcu wpisu**, więc zmieści w przyszłości pełną 64-bitową wartość (np. numer maszyny w klastrze, na której leży blok).
+**Wpis ma 32 bajty.** Pola leżą w naturalnym porządku, bez dziur. To potęga dwójki, więc procesor znajduje wpis jednym przesunięciem bitowym, a w jednej linii pamięci podręcznej (64 B) mieszczą się dokładnie dwa wpisy. Milion jednoczesnych bloków to 32 MB.
 
-Wpis z flagą `VIEW` używa tych samych 32 bajtów inaczej: zamiast adresu przechowuje przesunięcie w rodzicu, a w zapasie numer rodzica i numer opisu prostokąta (sekcja 13). To potęga dwójki, więc procesor znajduje wpis jednym przesunięciem bitowym, a w jednej linii pamięci podręcznej (64 B) mieszczą się dokładnie dwa wpisy. Milion jednoczesnych bloków to 32 MB.
+### Pole zależne od rodzaju wpisu
+
+Ostatnie 8 bajtów wpisu (przesunięcie 24) ma znaczenie zależne od rodzaju wpisu, który wyznacza flaga:
+
+| Rodzaj wpisu | Przesunięcie 0 (8 B) | Przesunięcie 8 (8 B) | Przesunięcie 24 (8 B) |
+|---|---|---|---|
+| zwykły blok | adres | długość | zarezerwowane (np. w przyszłości numer maszyny w klastrze) |
+| `TEXT` | adres | **pojemność** | **długość tekstu** (sekcja 18) |
+| `VIEW` | przesunięcie w rodzicu | długość widoku | numer rodzica (4 B) + numer opisu prostokąta (4 B) (sekcja 14) |
+
+**Flagi korzystające z tego pola wykluczają się nawzajem**: wpis jest albo tekstem, albo widokiem, nigdy jednym i drugim. Pozostałe flagi (np. `MAPPED`) pola nie używają, więc mogą łączyć się z dowolnym rodzajem: tekst wczytany przez `.map` ma naraz `TEXT` i `MAPPED`. Każdy przyszły rodzaj wpisu musi odpowiedzieć na pytanie, czy potrzebuje tego pola i czy nie koliduje z innymi.
+
 
 Gdy `.update` musi przenieść blok w inne miejsce, zmienia się tylko adres we wpisie. Wszystkie zmienne i widoki wskazujące ten przydział od razu widzą nowy adres.
 
@@ -502,17 +794,17 @@ Gdy `.update` musi przenieść blok w inne miejsce, zmienia się tylko adres we 
 |---|---|---|
 | 0 | `GLOBAL` | blok należy do zmiennej globalnej |
 | 1 | `PERSISTENT` | zarezerwowany wpis zmiennej `PERSISTENT` w funkcji |
-| 2 | `VIEW` | wpis jest widokiem na inny blok (sekcja 13) |
-| 3 | `MAPPED` | blok to plik podpięty przez `.map` (sekcja 14) |
+| 2 | `VIEW` | wpis jest widokiem na inny blok (sekcja 14) |
+| 3 | `MAPPED` | blok to plik podpięty przez `.map` (sekcja 15) |
 | 4 | `MAPPED_WRITABLE` | plik mapowany otwarty do zapisu (ma sens tylko razem z `MAPPED`) |
-| 5 | — | zarezerwowany na przyszłe cechy bloku |
+| 5 | `TEXT` | blok przechowuje tekst (sekcja 18) |
 | 6 | `DEBUG_MEMORY_PATTERN` | wypełnianie nowych bajtów wzorem w kompilacji testowej |
 | 7 | `PRODUCTION_MEMORY_PATTERN` | wypełnianie nowych bajtów wzorem w finalbake |
-| 8 | `rangeError`, bit młodszy | tryb wyjścia poza blok (sekcja 17) |
+| 8 | `rangeError`, bit młodszy | tryb wyjścia poza blok (sekcja 19) |
 | 9 | `rangeError`, bit starszy | |
 | 10–15 | — | wolne |
 
-Używanych jest 10 z 16 bitów, a 7 (bit 5 i bity 10–15) zostaje na przyszłe cechy.
+Używanych jest 10 z 16 bitów, a 6 (bity 10–15) zostaje na przyszłe cechy.
 
 **Tryb `rangeError`** zapisany jest na dwóch bitach: wartość = bit 9 × 2 + bit 8, czyli 0 = `DEFAULT`, 1 = `CONTINUE`, 2 = `WARNING`, 3 = `HALT`. Wartość 0 oznacza „sprawdź ustawienie domyślne programu” (`DEFAULT_RANGE_ERROR`).
 
@@ -521,7 +813,7 @@ Używanych jest 10 z 16 bitów, a 7 (bit 5 i bity 10–15) zostaje na przyszłe 
 - gdy element programu (funkcja, pętla, program główny) zaczyna używać bloku, `.shares` rośnie o 1,
 - przypisanie `ptr2 = ptr` zwiększa `.shares` o 1,
 - gdy element programu się kończy, `.shares` maleje o 1,
-- widoki **nie** zmieniają `.shares` rodzica, tylko jego **liczbę widoków** (sekcja 13),
+- widoki **nie** zmieniają `.shares` rodzica, tylko jego **liczbę widoków** (sekcja 14),
 - **pamięć jest zwalniana automatycznie, gdy `.shares` = 0 i liczba widoków = 0.**
 
 Każdy licznik mówi jedną rzecz: `.shares` to liczba zmiennych trzymających blok, a liczba widoków to liczba widoków na niego patrzących.
@@ -532,7 +824,7 @@ Zmienna `GLOBAL` należy do programu głównego, więc jej `.shares` nie spadnie
 
 ---
 
-## 9. Soczewki: pozycja i szerokość
+## 10. Soczewki: pozycja i szerokość
 
 Każdy dostęp do bloku przez soczewkę (`ptr.<typ>[n]`) rozstrzyga dwie rzeczy: **gdzie** zaczynamy i **ile** czytamy lub zapisujemy.
 
@@ -580,7 +872,7 @@ Soczewka służy więc do **ustawienia pozycji**, a druga strona mówi, **ile mi
 
 ---
 
-## 10. Odłamki: niepełne elementy
+## 11. Odłamki: niepełne elementy
 
 **Odłamek** powstaje, gdy odczyt lub zapis od wyznaczonej pozycji sięga poza koniec bloku.
 
@@ -610,7 +902,7 @@ Odłamek typu `float` zwykle nie ma sensu liczbowego. To błąd założeń progr
 
 ---
 
-## 11. Operacje blokowe
+## 12. Operacje blokowe
 
 **Soczewka bez indeksu oznacza cały blok** jako ciąg elementów. Operacja wykonuje się na każdym elemencie:
 
@@ -623,7 +915,7 @@ ptr.viewPortion[0:400].float *= 2           # tylko floaty w widoku
 
 Zasada: **bez indeksu = całość, z indeksem = jeden element**.
 
-`ptr.<typ>.count` zwraca liczbę **pełnych** elementów typu w bloku. Ostatni, niepełny element (odłamek) też jest objęty operacją, zgodnie z sekcją 10.
+`ptr.<typ>.count` zwraca liczbę **pełnych** elementów typu w bloku. Ostatni, niepełny element (odłamek) też jest objęty operacją, zgodnie z sekcją 11.
 
 Kompilator zamienia operację blokową na pętlę w kodzie maszynowym, która przetwarza wiele elementów naraz instrukcjami wektorowymi (SIMD).
 
@@ -636,7 +928,7 @@ ptr.float.fill[1.5]      # z soczewką: powtarzany float (4 B)
 ptr.fill[kolor]          # zmienna (kolor as Color): powtarzany 10-bajtowy piksel
 ptr.fill[&00FFh]         # literał szesnastkowy: powtarzane 16 bitów
 ptr.fill[&101b]          # literał binarny: powtarzane 3 bity
-ptr.fill[5]              # literał dziesiętny bez soczewki: 1 bajt (sekcja 5)
+ptr.fill[5]              # literał dziesiętny bez soczewki: 1 bajt (sekcja 6)
 ```
 
 **Wzór jest powtarzany z dokładnością do bitu**, także przez granice bajtów (`&101b` daje `101101101...`). Jeśli długość bloku w bitach nie dzieli się przez długość wzoru, ostatnie powtórzenie jest ucinane, zgodnie z zasadą odłamków.
@@ -645,7 +937,7 @@ ptr.fill[5]              # literał dziesiętny bez soczewki: 1 bajt (sekcja 5)
 
 ---
 
-## 12. Operacje bitowe i inne operacje wbudowane
+## 13. Operacje bitowe i inne operacje wbudowane
 
 ### Operacje bitowe
 
@@ -689,16 +981,16 @@ Zastosowania `.value`: arytmetyka wielkich liczb w kryptografii (RSA na liczbach
 
 ### Inne operacje wbudowane
 
-Do języka trafia to, co odpowiada jednej instrukcji procesora albo wymaga wiedzy kompilatora, żeby działało szybko. Nazwy do ustalenia (sekcja 24):
+Do języka trafia to, co odpowiada jednej instrukcji procesora albo wymaga wiedzy kompilatora, żeby działało szybko. Nazwy do ustalenia (sekcja 28):
 
 - **liczenie bitów:** liczba jedynek, liczba zer od góry i od dołu (kompresja, kryptografia, struktury danych),
-- **nasycenie `saturate( )`:** `250 + 10` w bajcie daje `255` zamiast zawinięcia do `4` (grafika: rozjaśnianie, mieszanie kolorów); opis w sekcji 4,
+- **nasycenie `saturate( )`:** `250 + 10` w bajcie daje `255` zamiast zawinięcia do `4` (grafika: rozjaśnianie, mieszanie kolorów); opis w sekcji 5,
 - **redukcje blokowe:** suma, minimum, maksimum, iloczyn skalarny dwóch bloków (podstawa uczenia maszynowego),
 - **zamiana kolejności bajtów** dla plików i protokołów zapisanych w big-endian.
 
 ---
 
-## 13. Widoki i kopie fragmentów
+## 14. Widoki i kopie fragmentów
 
 **Widok** to okno na fragment istniejącego bloku, **bez kopiowania danych**. **Kopia** tworzy nowy, niezależny blok.
 
@@ -793,7 +1085,7 @@ zmienne programu ──► widok (.shares widoku)
 
 ---
 
-## 14. Pliki mapowane (`.map`)
+## 15. Pliki mapowane (`.map`)
 
 ```
 skan as pointer
@@ -832,7 +1124,7 @@ Pamięć zajmuje tylko przetwarzany fragment, a reszta pliku zostaje na dysku. W
 
 ---
 
-## 15. Struktury (`STRUCT`)
+## 16. Struktury (`STRUCT`)
 
 **Struktura to zestaw aliasów ze stałymi przesunięciami**, a nie pudełko na dane jak w C. Deklaracja nie przydziela pamięci, tylko mówi kompilatorowi, gdzie leżą pola względem początku struktury.
 
@@ -867,7 +1159,7 @@ Raw12 as STRUCT { P0 as unsigned_12, P1 as unsigned_12 }                        
 
 ---
 
-## 16. Aliasy (`ALIAS`)
+## 17. Aliasy (`ALIAS`)
 
 Alias to nazwa nadana stałemu fragmentowi bloku, przez dowolną soczewkę:
 
@@ -893,15 +1185,96 @@ Alias nazywa **jeden** fragment konkretnego bloku. Struktura opisuje **zestaw** 
 
 ---
 
-## 17. Wyjście poza blok: `.rangeError`
+## 18. Teksty (`text`)
 
-Dotyczy **wyłącznie bloków** (zmiennych `pointer` i widoków). Zmienne statyczne nie są sprawdzane (sekcja 4).
+Tekst w BEMOL-u nie jest osobnym, „magicznym” typem, tylko tym, czym wszystko: **blokiem bajtów**, z jednym dodatkiem. Menedżer pamięci pilnuje, gdzie kończy się prawdziwy tekst.
+
+### Pojemność i długość tekstu
+
+Bufor tekstowy ma zawsze dwie wielkości:
+
+- **pojemność**: ile bajtów zarezerwowano,
+- **długość tekstu**: ile z nich zajmuje teraz prawdziwy tekst.
+
+```
+pojemność 1024:  [a][b][c][?][?][?] ... [?]
+długość 3:        ───────
+                  tekst    nieużywane
+```
+
+Blok tekstowy ma flagę `TEXT` (bit 5). Pojemność zapisana jest w polu długości wpisu, a długość tekstu w polu zależnym od rodzaju wpisu (sekcja 9). Żadnej dodatkowej pamięci, żadnego znaku końca tekstu.
+
+```
+t as text
+t.new[1024]          # pojemność 1024, długość tekstu 0
+t = "abc"            # długość tekstu 3
+t.length             # 3    (długość tekstu)
+t.capacity           # 1024 (pojemność)
+```
+
+- **`.length` dla tekstu zwraca długość tekstu** (w bajtach), bo to chce wiedzieć człowiek pytający o długość napisu,
+- **`.capacity`** zwraca pojemność,
+- **odczyt za końcem tekstu** (`t.byte[500]`, gdy tekst ma 3 bajty) jest wyjściem poza zakres i reaguje według `.rangeError`. Nieużywane bajty za tekstem są niedostępne przez przypadek,
+- tekst może mieć do 2^64 bajtów; w praktyce ogranicza go pamięć, a przy tekście z pliku mapowanego dysk.
+
+> **Dlaczego bez zera na końcu tekstu?** W C koniec tekstu oznacza bajt o wartości 0. Żeby poznać długość, trzeba przejść cały tekst, a zapomniane albo nadpisane zero sprawia, że program czyta dalej po pamięci. To jedna z najczęstszych przyczyn błędów bezpieczeństwa w historii informatyki. W BEMOL-u długość tekstu jest zapisana we wpisie menedżera, a jej odczyt to jedna operacja.
+
+### Literały tekstowe
+
+```
+nazwa as text = "teren_16k.raw"
+powitanie as text = "Zażółć gęślą jaźń\n"
+```
+
+- kodowanie **UTF-8**: obsługuje polskie znaki i każdy alfabet, a zwykłe litery łacińskie zajmują 1 bajt,
+- znaki specjalne: `\n` (nowa linia), `\t` (tabulator), `\"` (cudzysłów), `\\` (ukośnik),
+- **literał w kodzie jest tylko do odczytu**, jak stała. Żeby go zmienić, trzeba zrobić kopię: `t = "abc".copy`.
+
+### Bajty i znaki
+
+- `t.byte[n]` daje surowe bajty, jak w każdym bloku,
+- `foreach z in t.char do` przechodzi po znakach (polska litera „ż” to 2 bajty, ale jeden znak),
+- `t.charCount` zwraca liczbę znaków.
+
+Celowo nie ma `t.char[n]`. Znaki UTF-8 mają różną długość (1–4 bajty), więc dostanie się do 1000. znaku wymaga przejścia przez 999 poprzednich. Taka operacja wyglądałaby na tanią, a jest kosztowna.
+
+### Dopisywanie: `.append`
+
+```
+t as text
+t.new[16]
+t = "abc"
+t.append["def"]          # mieści się: kopiowane 3 bajty, długość tekstu 3 → 6
+t.append[nazwaPliku]     # nie mieści się: blok rośnie
+```
+
+- **gdy dopisywany tekst mieści się w pojemności**, kopiowane są tylko nowe bajty i zwiększana długość tekstu,
+- **gdy się nie mieści, blok jest powiększany przez `.update` dokładnie o tyle, ile trzeba**, bez ukrytego zapasu. Powiększenie może przenieść blok, a widoki na tekst nadal działają,
+- przy sporadycznym użyciu (ścieżka do pliku, komunikat) koszt jest pomijalny. Kto przetwarza duże teksty, rezerwuje pojemność z góry: `t.new[1000000]`. W kompilacji testowej kompilator podpowiada, gdy `.append` w pętli wielokrotnie powiększa blok.
+
+### Porównywanie: `==`
+
+- **dwa teksty:** `a == b` porównuje **treść**. Najpierw długości (natychmiast), a dopiero przy równych długościach bajty. Tak, jak oczekuje każdy, kto pisze `if nazwa == "obraz.raw" then`,
+- **dwa bloki `pointer`:** `a == b` znaczy „ten sam blok” (porównanie numerów wpisów, natychmiastowe). Porównanie treści dużych bloków to funkcja biblioteki, bo jest kosztowne,
+- gdy dla tekstów potrzebne jest „ten sam blok”, zapisuje się to jawnie: `a.pointer == b.pointer`.
+
+### Pozostałe operacje
+
+Wyszukiwanie, wycinanie, zamiana liczby na tekst i odwrotnie należą do biblioteki standardowej (sekcja 24).
+
+> Jak to działa w środku: [bemol-wnetrze.md, rozdział 11 (teksty w środku)](bemol-wnetrze.md#11-teksty-w-środku)
+
+---
+
+## 19. Wyjście poza blok: `.rangeError`
+
+Dotyczy **wyłącznie bloków** (zmiennych `pointer` i widoków). Zmienne statyczne nie są sprawdzane (sekcja 5).
 
 | Wartość | Tryb | Działanie |
 |---|---|---|
 | 0 | `DEFAULT` | zachowanie domyślne, ustawione przez `DEFAULT_RANGE_ERROR` |
 | 1 | `CONTINUE` | program działa dalej, zgodnie z zasadami odłamków |
-| 2 | `WARNING` | program działa dalej i zgłasza ostrzeżenie (sekcja 18) |
+| 2 | `WARNING` | program działa dalej i zgłasza ostrzeżenie (sekcja 20) |
 | 3 | `HALT` | program zatrzymuje się |
 
 ```
@@ -913,7 +1286,7 @@ Standardowo `DEFAULT_RANGE_ERROR = HALT`. Tryb każdego bloku jest zapisany w bi
 
 ---
 
-## 18. Ostrzeżenia i komunikaty błędów
+## 20. Ostrzeżenia i komunikaty błędów
 
 ### Ostrzeżenia (`WARNING`)
 
@@ -947,7 +1320,7 @@ błąd BML-E0412: zwalniasz blok, na który patrzą widoki
    |     ^^^^^^^^^^^^^ blok `obraz` ma 1 aktywny widok
    |
    = widok `kafelek` utworzony tutaj: obraz.bmol:41:15
-   = zasada: bloku z aktywnymi widokami nie można zwolnić (specyfikacja, sekcja 13)
+   = zasada: bloku z aktywnymi widokami nie można zwolnić (specyfikacja, sekcja 14)
    = pomoc: najpierw zwolnij widok: `kafelek.release`
 ```
 
@@ -962,7 +1335,7 @@ błąd BML-E0412: zwalniasz blok, na który patrzą widoki
   "related": [
     { "role": "view_created", "file": "obraz.bmol", "line": 41, "column": 15 }
   ],
-  "rule": "spec#13",
+  "rule": "spec#14",
   "fix": { "insert_before_line": 57, "text": "kafelek.release" }
 }
 ```
@@ -978,9 +1351,33 @@ błąd BML-E0412: zwalniasz blok, na który patrzą widoki
 7. **Ten sam format dla błędów w działającym programie.** `HALT` z `.rangeError` wypisuje kod, nazwę zmiennej, pozycję, długość bloku, linię i łańcuch wywołań funkcji. Log ostrzeżeń z kompilacji testowej też ma oba formaty.
 8. **Pola formy JSON zawsze po angielsku i stałe**, a komunikat dla człowieka w języku programisty. Pierwszym językiem komunikatów jest angielski (pod niego budowana będzie społeczność), drugim polski.
 
+
+### Potwierdzanie ostrzeżeń: `@ACCEPT`
+
+Gdy programista uznaje ostrzeżenie za zamierzone, potwierdza to jawnie, **dokładnie przy instrukcji, której dotyczy**:
+
+```
+switch kanal
+    case 5 @ACCEPT BML-W0310 "5 ma osobną obsługę"
+        ...
+    case 1 to 10
+        ...
+switch.end
+```
+
+- **`@ACCEPT` stoi na końcu instrukcji** (w tej samej linii lub części oddzielonej `;`) i dotyczy tylko jej. Nie ma wersji obejmującej blok ani cały plik,
+- **musi stać dokładnie tam, gdzie kompilator zgłasza ostrzeżenie**. Akceptacja w innym miejscu jest błędem z podpowiedzią, gdzie ją przenieść. Przy instrukcji przeniesionej na kilka linii stoi na końcu ostatniej,
+- **zawsze z konkretnym kodem ostrzeżenia**: `@ACCEPT BML-W0310` potwierdza tylko to jedno. Nowe, inne ostrzeżenie w tym miejscu nie zostanie przypadkiem przykryte,
+- **uzasadnienie w cudzysłowie** jest opcjonalne, ale zalecane: za rok widać, dlaczego tak zostało,
+- **tylko ostrzeżenia, nigdy błędy.** Błąd trzeba naprawić,
+- **zbędne potwierdzenie:** gdy ostrzeżenie już nie występuje, kompilator informuje, że `@ACCEPT` można usunąć,
+- **przed `-finalbake`** narzędzia pokazują listę ostrzeżeń nierozstrzygniętych i zaakceptowanych, razem z uzasadnieniami.
+
+Każda akceptacja jest widoczna dokładnie tam, gdzie zapadła decyzja. Kod z wieloma `@ACCEPT` sam zadaje pytanie „dlaczego?”, i o to chodzi: ostrzeżenie nie znika po cichu, tylko zamienia się w udokumentowaną decyzję. Potwierdzenia są zapisane w kodzie źródłowym, więc nie giną po otwarciu projektu w innym edytorze.
+
 ---
 
-## 19. Zestawienie operacji na `pointer`
+## 21. Zestawienie operacji na `pointer`
 
 ### Zarządzanie blokiem
 
@@ -992,7 +1389,7 @@ błąd BML-E0412: zwalniasz blok, na który patrzą widoki
 | `ptr.update[*]` | zmienia rozmiar, zachowując dane; nowe bajty mają nieokreśloną zawartość. Po `.release` przydziela nowy blok |
 | `ptr.release` | zwalnia blok, `.length` = 0; zmienna pozostaje zarejestrowana. Niedozwolone przy aktywnych widokach |
 | `ptr.clear` | zeruje cały blok (zawsze wykonywane, także tuż przed `.release`) |
-| `ptr.fill[wartość]` | wypełnia blok powtarzanym wzorem (sekcja 11) |
+| `ptr.fill[wartość]` | wypełnia blok powtarzanym wzorem (sekcja 12) |
 | `ptr.map["plik"]` | podpina plik z dysku jako blok pamięci, tylko do odczytu |
 | `ptr.map["plik", WRITABLE]` | podpina plik z dysku do odczytu i zapisu |
 | `ptr.shares` | zwraca liczbę użyczeń |
@@ -1007,7 +1404,7 @@ błąd BML-E0412: zwalniasz blok, na który patrzą widoki
 |---|---|
 | `ptr.value` | cały blok jako jedna liczba (największa soczewka) |
 | `ptr.value = <wartość>` | zapisuje wartość od bajtu 0 |
-| `ptr.<typ>[n]` | element przesunięty o n × rozmiar typu; szerokość według sekcji 9 |
+| `ptr.<typ>[n]` | element przesunięty o n × rozmiar typu; szerokość według sekcji 10 |
 | `ptr.<typ>` | bez indeksu: cały blok jako ciąg elementów (operacje blokowe) |
 | `ptr.<typ>.count` | liczba pełnych elementów typu w bloku |
 | `ptr.<Struktura>[n].pole` | pole struktury w n-tym elemencie, np. `ptr.Color[32].G` |
@@ -1026,7 +1423,7 @@ Wszystko, co zaczyna się od `copy`, tworzy nowe dane. Wszystko, co zaczyna się
 
 ---
 
-## 20. Kompilator
+## 22. Kompilator
 
 ### Kompilacje cząstkowe
 
@@ -1048,19 +1445,51 @@ Model pamięci BEMOL-a (uchwyty w menedżerze, licznik `.shares`, kontrola zakre
 
 ---
 
-## 21. Język a biblioteka standardowa
+## 23. Narzędzia
+
+### Zasada: wiedza w kompilatorze
+
+Cała wiedza o programie (podpowiedzi, ostrzeżenia, szerokości, adresy, komunikaty błędów) jest w **kompilatorze** i jest udostępniana przez standardowy protokół dla edytorów (*Language Server Protocol*, LSP). Dzięki temu:
+
+- działa w planowanym środowisku BEMOLIZER,
+- działa w każdym popularnym edytorze obsługującym LSP (np. VS Code), bez dodatkowej pracy,
+- agenty AI korzystają z tych samych danych w formacie JSON (sekcja 20).
+
+### BEMOLIZER
+
+Planowane środowisko programistyczne BEMOL-a:
+
+- **lista kontrolna ostrzeżeń przed `-finalbake`**: nierozstrzygnięte i zaakceptowane (`@ACCEPT`), z uzasadnieniami,
+- **podgląd zawartości bloków** przy debugowaniu,
+- **wizualizacja widoków prostokątnych** na danych obrazu,
+- przełączanie trybów kompilacji z menu, podgląd logu ostrzeżeń.
+
+### Planowane podpowiedzi
+
+- **soczewka:** pozycja w bajtach i bitach oraz szerokość odczytu, np. przy `ptr.int[5]`: „bajt 20, 4 B”,
+- **szerokość literału** po najechaniu kursorem,
+- **wyróżnienie szerokości natywnych** (8, 16, 32, 64) i informacja przy nienatywnych,
+- **kopia czy widok:** czy operacja tworzy nowe dane (`copy...`), czy tylko pokazuje istniejące (`view...`),
+- **`.update`:** informacja, że blok może zostać przeniesiony,
+- **koszty w pętlach:** `.new` lub wielokrotne powiększanie przez `.append` wewnątrz pętli.
+
+Celem narzędzi jest pomaganie programiście w podejmowaniu decyzji i pokazywanie potencjalnych niebezpieczeństw w prosty i czytelny sposób.
+
+---
+
+## 24. Język a biblioteka standardowa
 
 > **Do języka trafia to, co odpowiada jednej instrukcji procesora albo wymaga wiedzy kompilatora, żeby działało szybko. Całe algorytmy idą do biblioteki standardowej.**
 
-**W języku:** soczewki, operacje blokowe, operacje bitowe (sekcja 12), liczenie bitów, nasycenie (`saturate`), redukcje, zamiana kolejności bajtów, widoki i kopie.
+**W języku:** soczewki, operacje blokowe, operacje bitowe (sekcja 13), liczenie bitów, nasycenie (`saturate`), redukcje, zamiana kolejności bajtów, widoki i kopie.
 
-**W bibliotece standardowej:** mnożenie macierzy, splot (konwolucja), FFT, szyfrowanie (AES), skróty (SHA), arytmetyka wielkich liczb (dodawanie i mnożenie bloków jako liczb), generatory liczb losowych, funkcje aktywacji sieci neuronowych, sortowanie.
+**W bibliotece standardowej:** mnożenie macierzy, splot (konwolucja), FFT, szyfrowanie (AES), skróty (SHA), arytmetyka wielkich liczb (dodawanie i mnożenie bloków jako liczb), generatory liczb losowych, funkcje aktywacji sieci neuronowych, sortowanie, operacje na tekstach (wyszukiwanie, wycinanie, zamiana liczb na tekst), porównanie treści bloków, `clamp(x, min, max)`.
 
 Powody: algorytmów jest bardzo dużo, zmieniają się z czasem, a najlepsza implementacja zależy od sprzętu (CPU, karta graficzna, specjalne instrukcje procesora, np. dla AES). Biblioteka może z nich korzystać i być wymieniana bez zmiany języka, a sam język zostaje mały i łatwy do nauki.
 
 ---
 
-## 22. Obiekty: klasy uproszczone
+## 25. Obiekty: klasy uproszczone
 
 Klasyczna obiektowość (C++, Java) zawiera mechanizmy, które szkodzą maszynie:
 
@@ -1098,7 +1527,7 @@ czastki.Czastka[1000].Krok(0.016)    # metoda na cząstce nr 1000
 Obiekt to tylko dane w pamięci, więc **wszystko obsługuje istniejący menedżer bloków**, bez nowych mechanizmów:
 
 - **obiekt jako zmienna** (lokalna lub `GLOBAL`) leży na stosie jak każda struktura. Kompilator zna jego pola, więc pola typu `pointer` liczą się do `.shares` jak zwykłe zmienne,
-- **obiekty w bloku** (`ptr.new[100000*Czastka]`) to surowe dane bloku, a ich pola wskaźnikowe są zwykłymi liczbami, zgodnie z regułą z sekcji 6.
+- **obiekty w bloku** (`ptr.new[100000*Czastka]`) to surowe dane bloku, a ich pola wskaźnikowe są zwykłymi liczbami, zgodnie z regułą z sekcji 7.
 
 Dzięki temu obiekty nie tworzą cykli, słabe wskaźniki (`WEAK`) nie są potrzebne, a tablica 100 000 cząstek to jeden ciągły blok, który `for.parallel` i instrukcje wektorowe przetwarzają z pełną prędkością.
 
@@ -1131,7 +1560,20 @@ Zwieksz.end
 
 ---
 
-## 23. Przykładowy program
+## 26. Zalecany styl
+
+Kompilator wymusza tylko wielkie litery w słowach kluczowych. Nazwy programisty są jego wyborem. Poniższe zalecenia ułatwiają czytanie cudzego kodu, ale **nie są regułami języka**:
+
+- **stałe `CONST` i wartości `ENUM` wielkimi literami** (`ROZMIAR`, `GORACO`), żeby od razu było widać, że to stałe,
+- **zmienne i funkcje** z wielką literą na początku kolejnych słów (`isLightEnabled`, `rozjasnijObraz`),
+- **struktury, klasy i wyliczenia z wielkiej litery** (`Color`, `Czastka`, `Stan`),
+- **deklaracje globalne na górze pliku**, program główny pod nimi, funkcje na dole (sekcja 3).
+
+W przyszłości BEMOLIZER może mieć opcjonalne narzędzie do ujednolicania stylu w projekcie, uruchamiane świadomie przez zespół, który tego chce.
+
+---
+
+## 27. Przykładowy program
 
 ```
 GLOBAL obraz as pointer
@@ -1163,6 +1605,10 @@ MAIN BEGIN
     kafelek = obraz.viewRectangle[100*Color, 50, 64*Color, 64, SZER*Color]
     kafelek.Color.fill[obraz.Color[0]]
 
+    foreach px in kafelek.Color do    # pętla po pikselach widoku
+        px.Alpha = 0
+    foreach.end
+
     # kopia tego samego obszaru do nowego bloku
     miniatura as pointer
     miniatura = obraz.copyRectangle[100*Color, 50, 64*Color, 64, SZER*Color]
@@ -1171,10 +1617,14 @@ MAIN BEGIN
     flagi.new[2]
     isLightEnabled = true
 
+    nazwa as text = "teren_16k.raw"
+    jestRaw as bit = 0
+    if nazwa == "teren_16k.raw" then jestRaw = 1; if.end    # porównanie treści tekstów
+
     obraz.byte xor= &FFh              # każdy bajt odwrócony
     obraz.byte = saturate(obraz.byte + 20)   # rozjaśnienie bez „przekręcania” jasnych bajtów
 
-    if BUILD_MODE = TEST then
+    if BUILD_MODE == TEST then
         size = potega(2, 10)
     if.end
 
@@ -1195,11 +1645,16 @@ potega.end
 
 ---
 
-## 24. Otwarte pytania
+## 28. Otwarte pytania
 
-- [ ] **Klasy:** składnia konstruktora i jego parametrów, szczegóły `PRIVATE`, kompozycja struktur w praktyce (sekcja 22).
+- [ ] **Klasy:** składnia konstruktora i jego parametrów, szczegóły `PRIVATE`, kompozycja struktur w praktyce (sekcja 25).
 - [ ] **Katalog kodów błędów:** numeracja `BML-E...` (i ostrzeżeń `BML-W...`) oraz strony dokumentacji dla każdego kodu.
 - [ ] **Praca równoległa:** `for.parallel`, `split.chunk`, `split.cores`, tryby widoków (`read` / `write`).
 - [ ] **Nazwy operacji wbudowanych:** liczenie bitów, redukcje (suma, min, max, iloczyn skalarny), zamiana kolejności bajtów.
-- [ ] **Podmiana funkcji w działającym programie** (cel na przyszłość, sekcja 20).
-- [ ] **Środowisko programistyczne:** podpowiedzi (np. szerokość literału), menu trybów kompilacji, podgląd logu ostrzeżeń.
+- [ ] **Podmiana funkcji w działającym programie** (cel na przyszłość, sekcja 22).
+- [ ] **Wejście i wyjście:** wypisywanie wartości na ekran, odczyt i zapis zwykłych plików.
+- [ ] **Programy z wielu plików:** dołączanie funkcji, struktur i stałych z innych plików `.bmol`.
+- [ ] **Start i koniec programu:** argumenty podane przy uruchomieniu, kod zakończenia zwracany do systemu.
+- [ ] **Wyjście z kilku zagnieżdżonych pętli naraz.**
+- [ ] **Funkcje biblioteki tekstowej:** wyszukiwanie, wycinanie, zamiana liczb na tekst i odwrotnie, porównanie treści bloków.
+- [ ] **Środowisko programistyczne (BEMOLIZER):** szczegóły interfejsu (sekcja 23).
