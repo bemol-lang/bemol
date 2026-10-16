@@ -93,7 +93,7 @@ if.end
 Język rozróżnia wielkość liter.
 
 - **Słowa kluczowe budujące strukturę programu lub decydujące o życiu zmiennych piszemy WIELKIMI literami** (wymagane): `MAIN`, `BEGIN`, `END`, `CLASS`, `FUNCTION`, `STRUCT`, `GLOBAL`, `PERSISTENT`, `CONST`, `ALIAS`, `PRIVATE`.
-- **Słowa przepływu sterowania, operatory i łączniki piszemy małymi literami:** `for`, `to`, `do`, `if`, `then`, `as`, `return`, `and`, `or`, `xor`, `not`, `shl`, `shr`, `rol`, `ror`.
+- **Słowa przepływu sterowania, operatory, funkcje wbudowane i łączniki piszemy małymi literami:** `for`, `to`, `do`, `if`, `then`, `as`, `return`, `this`, `and`, `or`, `xor`, `not`, `shl`, `shr`, `rol`, `ror`, `saturate`.
 - **Wieloczłonowe nazwy wbudowane w język** piszemy z wielką literą na początku kolejnych słów: `rangeError`, `copyPortion`, `viewRectangle`.
 - **Nazwy zmiennych, funkcji i klas programisty są dowolne.**
 
@@ -185,13 +185,44 @@ Rozmiary są stałe i zdefiniowane przez język, niezależnie od procesora.
 | | `unsigned_16` | 2 B |
 | | `unsigned_32` | 4 B |
 | | `unsigned_64` | 8 B |
-| ze znakiem | `shortint` | 2 B |
-| | `int` | 4 B |
-| | `longint` | 8 B |
+| ze znakiem | `shortint` = `signed_16` | 2 B |
+| | `int` = `signed_32` | 4 B |
+| | `longint` = `signed_64` | 8 B |
 | zmiennoprzecinkowe | `halffloat` | 2 B |
 | | `float` | 4 B |
 | | `doublefloat` | 8 B |
-| struktura | `STRUCT` | suma pól (sekcja 15) |
+| struktura | `STRUCT` | suma pól, zaokrąglona do pełnego bajtu (sekcja 15) |
+
+Nazwy `byte`, `shortint`, `int` i `longint` to wygodne nazwy najczęstszych przypadków ogólnej reguły `unsigned_N` / `signed_N`. Poza tym język nie ma synonimów typów (np. nie ma `integer` obok `int`), żeby kod w jednym projekcie wyglądał jednolicie.
+
+### Typy o dowolnej liczbie bitów: `unsigned_N` i `signed_N`
+
+Dla dowolnego **N od 1 do 64**:
+
+```
+zmienna as unsigned_14       # wartości 0–16383
+probka as signed_24          # dźwięk 24-bitowy: -8 388 608 – 8 388 607
+```
+
+- **jako zmienna**: zajmuje w pamięci tyle pełnych bajtów, ile potrzeba (`unsigned_14` zajmuje 2 bajty, `signed_24` 3 bajty), ale przyjmuje tylko wartości ze swojego zakresu i zawija się na N bitach,
+- **w strukturze**: zajmuje dokładnie N bitów (sekcja 15),
+- **jako soczewka**: `ptr.unsigned_12[n]` to element nr n, czyli pozycja n × 12 bitów. Działa, ale wolniej, bo elementy nie leżą na granicach bajtów.
+
+Zapis z podkreślnikiem, a nie `unsigned[N]`, bo nawias kwadratowy oznacza pozycję w soczewce: `ptr.unsigned_12[5]` jest jednoznaczne, a `ptr.unsigned[12][5]` nie byłoby.
+
+### Szybkość przetwarzania według szerokości
+
+Procesor ma instrukcje tylko dla szerokości 8, 16, 32 i 64 bitów. Pozostałe szerokości działają poprawnie, ale wymagają dodatkowej pracy:
+
+| Poziom | Szerokości N | Jak procesor to robi | Szybkość |
+|---|---|---|---|
+| **natywne** | 8, 16, 32, 64 | jedna instrukcja odczytu lub zapisu; pełne wsparcie instrukcji wektorowych (SIMD) | najszybsze |
+| **wielokrotność bajtu** | 24, 40, 48, 56 | elementy leżą na granicach bajtów, ale procesor nie ma takiej szerokości: wczytuje więcej bajtów i odcina nadmiar | wolniejsze |
+| **pozostałe** | każda inna (1–7, 9–15, 12, 14...) | elementy mogą zaczynać się w środku bajtu: potrzebne przesunięcia bitów i maski | najwolniejsze jako soczewka |
+
+Różnica jest największa przy **soczewkach i operacjach blokowych** na dużych blokach (`ptr.unsigned_12[n]`, `ptr.unsigned_24 += 1`). Pojedyncza zmienna (`x as unsigned_14`) leży w pełnych bajtach, więc kosztuje tylko jedną dodatkową maskę przy zapisie, żeby zawinąć się na N bitach.
+
+**Zalecenie:** gdy liczy się szybkość, a format danych nie jest narzucony, wybieraj szerokości natywne. Szerokości nietypowe są dla danych, które już mają taki format (surowe zdjęcia 12-bitowe, dźwięk 24-bitowy, pola bitowe w strukturach). Częstym rozwiązaniem jest wczytanie danych nietypowych raz, zamiana na typ natywny (np. `unsigned_12` → `unsigned_16`), przetworzenie i zapisanie z powrotem.
 
 **Nazwa typu w wyrażeniu liczbowym oznacza jego rozmiar w bajtach:**
 
@@ -232,6 +263,31 @@ Programista zna pojemność swoich zmiennych, więc świadome przepełnienie jes
 
 **`.rangeError` nie dotyczy zmiennych statycznych**, tylko bloków (sekcja 17).
 
+### Nasycenie: `saturate( )`
+
+Gdy programista nie chce zawijania, może jawnie użyć `saturate( )`. Zamiast „przekręcić” wartość na drugą stronę, nasycenie zatrzymuje ją na **suficie** albo **podłodze** zakresu. **`saturate` nasyca w granicach soczewki** (albo typu zmiennej docelowej): soczewka wyznacza pozycję i zakres wartości, a `saturate` nie pozwala z tego zakresu wyjść.
+
+| Typ | Podłoga | Sufit |
+|---|---|---|
+| bez znaku (`byte`, `unsigned_N`) | 0 (same zera) | same jedynki, np. 255 dla `byte` |
+| ze znakiem (`shortint`, `int`, `signed_N`) | najmniejsza liczba ujemna, np. -32768 | największa dodatnia, np. 32767 |
+| zmiennoprzecinkowe | najmniejsza skończona liczba | największa skończona liczba (zamiast nieskończoności) |
+
+Dla typów ze znakiem sufit to nie same jedynki, bo w zapisie ze znakiem same jedynki oznaczają -1.
+
+```
+jasnosc as byte
+jasnosc = saturate(ptr.byte[5] + 60)              # jeden element
+ptr.byte = saturate(ptr.byte + 60)                # rozjaśnienie całego obrazu bez „przekręcania” jasnych pikseli
+if saturate(ptr.byte[5] + ptr.byte[3]) > 100 then # nasycana jest suma, przed porównaniem
+```
+
+`saturate` obejmuje **działanie**, a nie porównanie: przy bajtach 200 i 200 suma bez `saturate` zawija się do 144, a z `saturate` daje 255.
+
+Procesory mają gotowe instrukcje wektorowe nasycenia dla bajtów i liczb 16-bitowych, więc w operacjach blokowych na grafice jest to bardzo szybkie.
+
+> **Uwaga dla znających HLSL / Unreal Engine:** w HLSL `saturate(x)` zawsze przycina do zakresu 0–1. W BEMOL-u `saturate( )` przycina do zakresu typu soczewki: `saturate(1.7)` jako `float` zostaje 1.7. Przycięcie do dowolnego zakresu (np. 0–1) to kandydat do biblioteki standardowej: `clamp(x, min, max)`.
+
 ### Zamiana float na typ całkowity
 
 Brana jest **część całkowita, ułamek jest odrzucany** (obcinanie w stronę zera):
@@ -262,6 +318,8 @@ Gdy część całkowita jest za duża dla typu, zostaje tyle, ile się mieści.
 - **Literał szesnastkowy i binarny zmienia dokładnie tyle bitów, ile ma zapis**, a nie do pełnego bajtu.
 - Literał jest zapisywany od wskazanej pozycji w porządku little-endian: najmniej znacząca część trafia na najniższą pozycję. `ptr.byte[0] = &FF00h` daje bajt 0 = `00`, bajt 1 = `FF`.
 
+> **Kolejność bajtów w przykładach:** w całej specyfikacji zawartość pamięci pokazywana jest **w kolejności adresów, od bajtu 0**. Liczba `&0100h` (256) leży więc w pamięci jako `00 01`: bajt 0 = `00` (mniej znaczący), bajt 1 = `01`. Czytając tę samą liczbę jak zapis binarny, od prawej do lewej, widzimy `01 00`. Obie formy opisują te same dane.
+
 > ⚠️ **Literały dziesiętne mają szerokość zależną od wartości.**
 > Z soczewką przyjmują szerokość soczewki (sekcja 9). **Bez soczewki i bez zmiennej** (np. w `.fill` czy `.value =`) zajmują **tyle pełnych bajtów, ile potrzeba dla ich wartości**:
 >
@@ -274,7 +332,7 @@ Gdy część całkowita jest za duża dla typu, zostaje tyle, ile się mieści.
 > | `-200` | 2 bajty |
 > | `1.5` (z ułamkiem) | `doublefloat`, 8 bajtów |
 >
-> Dlatego `ptr.fill[255]` powtarza wzór 1-bajtowy (`FF FF ...`), a `ptr.fill[256]` wzór 2-bajtowy (`00 01 00 01 ...`). Programista musi to wiedzieć. Środowisko programistyczne może pokazywać szerokość literału po najechaniu na niego kursorem.
+> Dlatego `ptr.fill[255]` powtarza wzór 1-bajtowy (bajty od adresu 0: `FF FF ...`), a `ptr.fill[256]` wzór 2-bajtowy (bajty od adresu 0: `00 01 00 01 ...`). Programista musi to wiedzieć. Środowisko programistyczne może pokazywać szerokość literału po najechaniu na niego kursorem.
 
 ---
 
@@ -418,15 +476,15 @@ Menedżer pamięci to **tablica dynamiczna**, w której każdy wiersz opisuje je
 | długość | 8 B | rozmiar bloku w bajtach (do 2^64 B ≈ 16 milionów TB) |
 | shares | 4 B | liczba użyczeń |
 | flagi | 4 B (32 bity) | cechy serwisowe bloku, tabela poniżej |
-| generacja | 4 B | zarezerwowane na przyszłe słabe wskaźniki obiektów (sekcja 22) |
+| zarezerwowane | 4 B | do wykorzystania w przyszłości |
 | liczba widoków | 2 B | ile widoków patrzy na ten blok (do 65 535) |
-| zarezerwowane | 2 B | — |
+| zarezerwowane | 2 B | do wykorzystania w przyszłości |
 
-**Wpis ma 32 bajty.** To potęga dwójki, więc procesor znajduje wpis jednym przesunięciem bitowym, a w jednej linii pamięci podręcznej (64 B) mieszczą się dokładnie dwa wpisy. Milion jednoczesnych bloków to 32 MB.
+**Wpis ma 32 bajty**, w tym 6 bajtów zarezerwowanych na przyszłość (np. numer maszyny w klastrze, na której leży blok). To potęga dwójki, więc procesor znajduje wpis jednym przesunięciem bitowym, a w jednej linii pamięci podręcznej (64 B) mieszczą się dokładnie dwa wpisy. Milion jednoczesnych bloków to 32 MB.
 
 Gdy `.update` musi przenieść blok w inne miejsce, zmienia się tylko adres we wpisie. Wszystkie zmienne i widoki wskazujące ten przydział od razu widzą nowy adres.
 
-**Wolny wpis** rozpoznaje się po `.shares` = 0. Zmienna po `.release` ma `.shares` > 0 (nadal ktoś ją trzyma) i `.length` = 0.
+**Wolny wpis** rozpoznaje się po `.shares` = 0 **i** liczbie widoków = 0. Zmienna po `.release` ma `.shares` > 0 (nadal ktoś ją trzyma) i `.length` = 0.
 
 ### Flagi wpisu (bity serwisowe)
 
@@ -436,7 +494,8 @@ Gdy `.update` musi przenieść blok w inne miejsce, zmienia się tylko adres we 
 | 1 | `PERSISTENT` | zarezerwowany wpis zmiennej `PERSISTENT` w funkcji |
 | 2 | `VIEW` | wpis jest widokiem na inny blok (sekcja 13) |
 | 3 | `MAPPED` | blok to plik podpięty przez `.map` (sekcja 14) |
-| 4–5 | — | zarezerwowane na przyszłe cechy bloku |
+| 4 | `MAPPED_WRITABLE` | plik mapowany otwarty do zapisu (ma sens tylko razem z `MAPPED`) |
+| 5 | — | zarezerwowany na przyszłe cechy bloku |
 | 6 | `DEBUG_MEMORY_PATTERN` | wypełnianie nowych bajtów wzorem w kompilacji testowej |
 | 7 | `PRODUCTION_MEMORY_PATTERN` | wypełnianie nowych bajtów wzorem w finalbake |
 | 8 | `rangeError`, bit młodszy | tryb wyjścia poza blok (sekcja 17) |
@@ -449,9 +508,11 @@ Gdy `.update` musi przenieść blok w inne miejsce, zmienia się tylko adres we 
 
 - gdy element programu (funkcja, pętla, program główny) zaczyna używać bloku, `.shares` rośnie o 1,
 - przypisanie `ptr2 = ptr` zwiększa `.shares` o 1,
-- każdy widok zwiększa `.shares` swojego rodzica o 1,
 - gdy element programu się kończy, `.shares` maleje o 1,
-- **gdy `.shares` osiągnie 0, pamięć jest zwalniana automatycznie.**
+- widoki **nie** zmieniają `.shares` rodzica, tylko jego **liczbę widoków** (sekcja 13),
+- **pamięć jest zwalniana automatycznie, gdy `.shares` = 0 i liczba widoków = 0.**
+
+Każdy licznik mówi jedną rzecz: `.shares` to liczba zmiennych trzymających blok, a liczba widoków to liczba widoków na niego patrzących.
 
 Zmienna `GLOBAL` należy do programu głównego, więc jej `.shares` nie spadnie do 0 przed końcem programu. Pamięć można zwolnić wcześniej ręcznie, przez `.release`.
 
@@ -613,7 +674,7 @@ Zastosowania `.value`: arytmetyka wielkich liczb w kryptografii (RSA na liczbach
 Do języka trafia to, co odpowiada jednej instrukcji procesora albo wymaga wiedzy kompilatora, żeby działało szybko. Nazwy do ustalenia (sekcja 24):
 
 - **liczenie bitów:** liczba jedynek, liczba zer od góry i od dołu (kompresja, kryptografia, struktury danych),
-- **arytmetyka z nasyceniem:** `250 + 10` w bajcie daje `255` zamiast zawinięcia do `4` (grafika: rozjaśnianie, mieszanie kolorów),
+- **nasycenie `saturate( )`:** `250 + 10` w bajcie daje `255` zamiast zawinięcia do `4` (grafika: rozjaśnianie, mieszanie kolorów); opis w sekcji 4,
 - **redukcje blokowe:** suma, minimum, maksimum, iloczyn skalarny dwóch bloków (podstawa uczenia maszynowego),
 - **zamiana kolejności bajtów** dla plików i protokołów zapisanych w big-endian.
 
@@ -686,11 +747,12 @@ Każdy widok ma **własny wpis w menedżerze** (flaga `VIEW`) z własnym `.share
 
 ```
 zmienne programu ──► widok (.shares widoku)
-                         └──► rodzic (.shares rodzica +1, liczba widoków +1)
+                         └──► rodzic (liczba widoków +1; .shares rodzica bez zmian)
 ```
 
-- **Widok trzyma rodzica:** zwiększa jego `.shares` i liczbę widoków. Rodzic nie zniknie automatycznie, dopóki istnieje choć jeden widok.
-- **Widok kończy życie** przez `.release` albo gdy jego `.shares` spadnie do 0. Wtedy opis widoku jest zwalniany, a `.shares` i liczba widoków rodzica maleją o 1.
+- **Widok trzyma rodzica przez liczbę widoków**, a nie przez `.shares`. Menedżer zwalnia blok dopiero wtedy, gdy **oba** liczniki wynoszą 0, więc rodzic nie zniknie, dopóki istnieje choć jeden widok.
+- **Rodzic może stracić swoją zmienną, a widoki dalej działają.** Gdy program przestanie używać zmiennej rodzica (np. kończy się funkcja, w której powstał), jego `.shares` spada do 0, ale blok zostaje w pamięci, a widoki pracują na tych samych danych. Pamięć znika dopiero razem z ostatnim widokiem.
+- **Widok kończy życie** przez `.release` albo gdy jego `.shares` spadnie do 0. Wtedy opis widoku jest zwalniany, a liczba widoków rodzica maleje o 1.
 - **Bloku z aktywnymi widokami nie można zwolnić.** `.release` na takim bloku to błąd: w kompilacji testowej zatrzymanie z komunikatem („blok ma 3 aktywne widoki”), w finalbake zachowanie według `DEFAULT_RANGE_ERROR`. Programista najpierw zwalnia widoki, potem blok.
 - **`.update` na bloku z widokami jest dozwolone:** po powiększeniu lub przeniesieniu widoki od razu widzą dane w nowym miejscu, a po zmniejszeniu część widoku może wypaść poza blok i dostęp reaguje zgodnie z `.rangeError`.
 - **Widoki nigdy nie tworzą cykli:** widok trzyma rodzica, ale rodzic nie trzyma widoku (tylko liczy, ile ich ma).
@@ -701,8 +763,10 @@ zmienne programu ──► widok (.shares widoku)
 
 ```
 skan as pointer
-skan.map["skan_3d.bin"]        # plik 50 GB
-x = skan.float[1000000]        # odczyt jak ze zwykłego bloku
+skan.map["skan_3d.bin"]                    # plik 50 GB, tylko do odczytu
+x = skan.float[1000000]                    # odczyt jak ze zwykłego bloku
+
+tekstura.map["teren_16k.raw", WRITABLE]    # odczyt i zapis
 ```
 
 `.map` podpina plik z dysku jako blok pamięci (*memory-mapped file*). Nic nie jest wczytywane z góry: dopiero gdy program sięga do konkretnego miejsca, system operacyjny doczytuje z dysku tylko ten kawałek, a dawno nieużywane kawałki sam usuwa z pamięci. Program może więc pracować na pliku większym niż cała pamięć RAM.
@@ -714,8 +778,16 @@ Dla kodu programu blok zmapowany wygląda identycznie jak zwykły: te same socze
 - **wzory pamięci nie są stosowane**, bo nadpisałyby prawdziwe dane z dysku,
 - **zapis jest trwały:** zmiana bloku zmienia plik na dysku.
 
+### Zapis tylko na jawne życzenie: `WRITABLE`
+
+Zapis na dysk jest trwały i nieodwracalny, więc musi być świadomą decyzją. **Domyślnie plik mapowany jest tylko do odczytu.** Zapis programista zamawia przy otwieraniu pliku parametrem `WRITABLE`, co ustawia flagę `MAPPED_WRITABLE` (bit 4).
+
+- **Zapis do pliku tylko do odczytu jest zawsze błędem.** Gdy kompilator może to wykryć (widzi `.map` bez `WRITABLE`, a potem zapis), zgłasza błąd kompilacji. Gdy nie może (np. blok przekazany do funkcji), chroni go system operacyjny: strony pliku są podpięte tylko do odczytu, więc próba zapisu zatrzymuje program. To ochrona sprzętowa, więc nic nie kosztuje przy normalnej pracy.
+- Tryb `CONTINUE` nie ma tu zastosowania: nie da się „trochę” zapisać do pliku, którego nie wolno zmieniać.
+- **`.update` na pliku tylko do odczytu jest niedozwolone**, bo zmiana rozmiaru oznaczałaby zmianę pliku na dysku.
+
 ```
-tekstura.map["teren_16k.raw"]
+tekstura.map["teren_16k.raw", WRITABLE]
 kafelek = tekstura.viewPortion[start:rozmiarKafelka]
 kafelek.halffloat *= 1.2       # rozjaśnienie jednego kafelka, zapis wprost do pliku
 ```
@@ -732,7 +804,9 @@ Pamięć zajmuje tylko przetwarzany fragment, a reszta pliku zostaje na dysku. W
 Color as STRUCT { R as unsigned_16, G as unsigned_16, B as unsigned_16, Alpha as unsigned_32 }
 ```
 
-- **Struktura jest „ciasna”:** jej rozmiar to dokładnie suma pól, bez pustych bajtów wyrównania. `Color` = 2+2+2+4 = **10 bajtów**.
+- **Struktura jest „ciasna”:** pola leżą jedno za drugim, bez pustych bajtów wyrównania. `Color` = 2+2+2+4 = **10 bajtów**.
+- **Pola mogą mieć dowolną liczbę bitów** (`bit`, `unsigned_N`, `signed_N`), a kompilator sam obsługuje pola zaczynające się w środku bajtu.
+- **Rozmiar całej struktury jest zaokrąglany w górę do pełnego bajtu.** Brakujące bity na końcu to nieużywane wypełnienie. Dzięki temu każdy element tablicy struktur (`ptr.S[n]`) zaczyna się na granicy bajtu i dostęp do niego jest szybki.
 - **Nazwa struktury działa jak każdy typ**: w wyrażeniach rozmiaru (`new[100*Color]`) i jako soczewka.
 - **Struktura nie jest właścicielem danych.** Blok dalej należy do zmiennej `pointer` i można go czytać innymi strukturami, bajtami czy bitami.
 - Przesunięcia są stałe, więc struktura **nic nie kosztuje** w działającym programie.
@@ -742,6 +816,16 @@ ptr.new[100*Color]
 ptr.Color[32].G = 500          # pole G w pikselu nr 32
 x = ptr.Color[32].G            # to samo co odczyt 2 bajtów od bajtu 322
 ```
+
+### Struktury z polami bitowymi
+
+```
+Flagi as STRUCT { widoczny as bit, zaznaczony as bit, warstwa as unsigned_6 }   # 8 bitów = 1 bajt
+Mix as STRUCT { aktywny as bit, wartosc as unsigned_16 }                         # 17 bitów → 3 bajty (7 bitów wypełnienia)
+Raw12 as STRUCT { P0 as unsigned_12, P1 as unsigned_12 }                         # 24 bity = 3 bajty, 2 piksele
+```
+
+`Raw12` pokazuje, jak upakować dane bez żadnych przerw: grupuje się elementy tak, żeby razem dały pełne bajty. Dwa piksele 12-bitowe (format surowych zdjęć z aparatów) to dokładnie 3 bajty. Gdy potrzebny jest ciągły strumień bitów bez granic elementów, służą do tego `.bit[]`, `ptr.unsigned_N[n]` i `.value`.
 
 ---
 
@@ -824,7 +908,8 @@ W finalbake bez `WARNING_HANDLER` tryb `WARNING` zachowuje się dokładnie jak `
 | `ptr.release` | zwalnia blok, `.length` = 0; zmienna pozostaje zarejestrowana. Niedozwolone przy aktywnych widokach |
 | `ptr.clear` | zeruje cały blok (zawsze wykonywane, także tuż przed `.release`) |
 | `ptr.fill[wartość]` | wypełnia blok powtarzanym wzorem (sekcja 11) |
-| `ptr.map["plik"]` | podpina plik z dysku jako blok pamięci |
+| `ptr.map["plik"]` | podpina plik z dysku jako blok pamięci, tylko do odczytu |
+| `ptr.map["plik", WRITABLE]` | podpina plik z dysku do odczytu i zapisu |
 | `ptr.shares` | zwraca liczbę użyczeń |
 | `ptr.length` | zwraca długość bloku w bajtach (0 = brak bloku) |
 | `ptr.rangeError = <tryb>` | zachowanie przy wyjściu poza blok |
@@ -880,7 +965,7 @@ Model pamięci BEMOL-a (uchwyty w menedżerze, licznik `.shares`, kontrola zakre
 
 > **Do języka trafia to, co odpowiada jednej instrukcji procesora albo wymaga wiedzy kompilatora, żeby działało szybko. Całe algorytmy idą do biblioteki standardowej.**
 
-**W języku:** soczewki, operacje blokowe, operacje bitowe (sekcja 12), liczenie bitów, arytmetyka z nasyceniem, redukcje, zamiana kolejności bajtów, widoki i kopie.
+**W języku:** soczewki, operacje blokowe, operacje bitowe (sekcja 12), liczenie bitów, nasycenie (`saturate`), redukcje, zamiana kolejności bajtów, widoki i kopie.
 
 **W bibliotece standardowej:** mnożenie macierzy, splot (konwolucja), FFT, szyfrowanie (AES), skróty (SHA), arytmetyka wielkich liczb (dodawanie i mnożenie bloków jako liczb), generatory liczb losowych, funkcje aktywacji sieci neuronowych, sortowanie.
 
@@ -895,7 +980,34 @@ Obiekty (klasy) zostaną opisane szczegółowo w osobnym etapie. Ustalone zało�
 - **Obiekty to struktury poza blokami**, z **własnym menedżerem pamięci**, odrębnym od menedżera bloków.
 - **Przy usunięciu obiektu** menedżer obiektów zgłasza menedżerowi bloków, że obiekt odchodzi, a jego pola wskaźnikowe puszczają trzymane bloki. Menedżer bloków zmniejsza ich `.shares` i zwalnia te, których nikt inny nie używa.
 - **Życie obiektu nie powinno wynikać ze zliczania odwołań między obiektami.** Gdyby tak było, dwa obiekty wskazujące na siebie nawzajem (np. samochód trzymający koło i koło znające swój samochód) trzymałyby się w pamięci na zawsze. Życie obiektu ma wynikać z właściciela (funkcji, programu lub obiektu, który go utworzył) albo z jawnego usunięcia przez programistę.
-- **Słabe wskaźniki (`WEAK`)**, czyli wskaźniki, które „wiedzą, gdzie jest obiekt, ale go nie trzymają” (jak `TWeakObjectPtr` w Unreal Engine), zostaną rozważone przy projektowaniu klas. Na ich potrzeby we wpisie menedżera zarezerwowano pole **generacji**: przy każdym ponownym użyciu wpisu licznik rośnie, a słaby wskaźnik porównuje zapamiętaną generację z aktualną, żeby wiedzieć, czy jego cel nadal istnieje.
+- **Słabe wskaźniki (`WEAK`)**, czyli wskaźniki, które „wiedzą, gdzie jest obiekt, ale go nie trzymają” (jak `TWeakObjectPtr` w Unreal Engine), zostaną rozważone przy projektowaniu klas. Jeśli będą potrzebne, ich mechanizm (np. licznik generacji wpisu) trafi do menedżera obiektów, a nie do menedżera bloków: bloki nie tworzą cykli, więc słabych wskaźników nie potrzebują.
+
+### Notacja klas
+
+Kropka łączy właściciela z tym, co do niego należy. Pełna nazwa jest zawsze poprawna, a kropka na początku to jej skrót, oznaczający „ta klasa” albo „ten obiekt”:
+
+| Gdzie | Pełna forma | Skrót |
+|---|---|---|
+| deklaracja pola w klasie | `Klasa.zmienna as int` | `.zmienna as int` |
+| deklaracja metody w klasie | `FUNCTION Klasa.Odczytaj(): int` | `FUNCTION .Odczytaj(): int` |
+| pole obiektu wewnątrz metody | `this.zmienna = 1` | `.zmienna = 1` |
+
+```
+CLASS Licznik
+    .wartosc as int
+    FUNCTION .Zwieksz(): void              # deklaracja
+Licznik.end
+
+FUNCTION Licznik.Zwieksz(): void           # definicja poza klasą, pełna nazwa
+    .wartosc = .wartosc + 1                # pole tego obiektu (to samo co this.wartosc)
+Zwieksz.end
+```
+
+- **Wewnątrz metody** `.pole` i `this.pole` oznaczają pole obiektu, na którym działa metoda. Zmienna bez kropki to zmienna lokalna metody, więc od razu widać, co jest polem.
+- **Metody można definiować poza klasą** z pełną nazwą (`FUNCTION Klasa.Metoda`), w dowolnym miejscu pliku. Przy dużych klasach deklaracja klasy staje się czytelnym „spisem treści”.
+- **Kropka na początku poza klasą to błąd kompilacji**, bo nie ma właściciela, do którego mogłaby się odnosić.
+- `this` piszemy małymi literami, bo to odwołanie, używane jak zmienna, a nie słowo budujące strukturę programu.
+- **Konstruktor:** obiekt musi mieć konstruktor z parametrami. Wstępna propozycja: parametry należą do konstruktora, a sama deklaracja klasy jest bez parametrów (`CLASS Klasa`). Do ustalenia.
 
 ---
 
@@ -940,6 +1052,7 @@ MAIN BEGIN
     isLightEnabled = true
 
     obraz.byte xor= &FFh              # każdy bajt odwrócony
+    obraz.byte = saturate(obraz.byte + 20)   # rozjaśnienie bez „przekręcania” jasnych bajtów
 
     if BUILD_MODE = TEST then
         size = potega(2, 10)
@@ -964,8 +1077,8 @@ potega.end
 
 ## 24. Otwarte pytania
 
-- [ ] **Klasy i obiekty:** pola, metody, `PRIVATE`, tworzenie i usuwanie obiektów, menedżer obiektów, sposób ustalania życia obiektu, ewentualne `WEAK` (sekcja 22).
+- [ ] **Klasy i obiekty:** konstruktor i jego parametry, `PRIVATE`, tworzenie i usuwanie obiektów, menedżer obiektów, sposób ustalania życia obiektu, ewentualne `WEAK` (sekcja 22).
 - [ ] **Praca równoległa:** `for.parallel`, `split.chunk`, `split.cores`, tryby widoków (`read` / `write`).
-- [ ] **Nazwy operacji wbudowanych:** liczenie bitów, arytmetyka z nasyceniem, redukcje (suma, min, max, iloczyn skalarny), zamiana kolejności bajtów.
+- [ ] **Nazwy operacji wbudowanych:** liczenie bitów, redukcje (suma, min, max, iloczyn skalarny), zamiana kolejności bajtów.
 - [ ] **Podmiana funkcji w działającym programie** (cel na przyszłość, sekcja 20).
 - [ ] **Środowisko programistyczne:** podpowiedzi (np. szerokość literału), menu trybów kompilacji, podgląd logu ostrzeżeń.
