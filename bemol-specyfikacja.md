@@ -1605,20 +1605,22 @@ Gdy programista uznaje ostrzeżenie za zamierzone, potwierdza to jawnie, **dokł
 
 ```
 switch kanal
-    case 5 @ACCEPT BML-W0310 "5 ma osobną obsługę"
+    case 5 @ACCEPT WARNING            # 5 ma osobną obsługę
         ...
     case 1 to 10
         ...
 switch.end
+
+dane.byte[5] = licznik @ACCEPT WARNING      # celowo 4 B: zapis całego licznika
 ```
 
 - **`@ACCEPT` stoi na końcu instrukcji** (w tej samej linii lub części oddzielonej `;`) i dotyczy tylko jej. Nie ma wersji obejmującej blok ani cały plik,
 - **musi stać dokładnie tam, gdzie kompilator zgłasza ostrzeżenie**. Akceptacja w innym miejscu jest błędem z podpowiedzią, gdzie ją przenieść. Przy instrukcji przeniesionej na kilka linii stoi na końcu ostatniej,
-- **zawsze z konkretnym kodem ostrzeżenia**: `@ACCEPT BML-W0310` potwierdza tylko to jedno. Nowe, inne ostrzeżenie w tym miejscu nie zostanie przypadkiem przykryte,
-- **uzasadnienie w cudzysłowie** jest opcjonalne, ale zalecane: za rok widać, dlaczego tak zostało,
+- **`@ACCEPT WARNING` potwierdza wszystkie ostrzeżenia tej jednej instrukcji**, bez podawania kodów. Zakres jest i tak tylko jedna instrukcja, więc pamiętanie numerów ostrzeżeń byłoby zbędnym balastem,
+- **uzasadnienie to zwykły komentarz `#`** w tej samej linii. Opcjonalny, ale zalecany: za rok widać, dlaczego tak zostało,
 - **tylko ostrzeżenia, nigdy błędy.** Błąd trzeba naprawić,
 - **zbędne potwierdzenie:** gdy ostrzeżenie już nie występuje, kompilator informuje, że `@ACCEPT` można usunąć,
-- **przed `-finalbake`** narzędzia pokazują listę ostrzeżeń nierozstrzygniętych i zaakceptowanych, razem z uzasadnieniami.
+- **przed `-finalbake`** narzędzia pokazują listę ostrzeżeń nierozstrzygniętych i zaakceptowanych: przy każdym zaakceptowanym miejscu kody ostrzeżeń, które w nim występują, i komentarz z uzasadnieniem. Gdy po zmianie kodu ta sama instrukcja zacznie dawać nowe, inne ostrzeżenie, `@ACCEPT WARNING` je przykryje, ale jego kod będzie widoczny na tej liście.
 
 Każda akceptacja jest widoczna dokładnie tam, gdzie zapadła decyzja. Kod z wieloma `@ACCEPT` sam zadaje pytanie „dlaczego?”, i o to chodzi: ostrzeżenie nie znika po cichu, tylko zamienia się w udokumentowaną decyzję. Potwierdzenia są zapisane w kodzie źródłowym, więc nie giną po otwarciu projektu w innym edytorze.
 
