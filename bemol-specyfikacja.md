@@ -2,6 +2,7 @@
 
 > **BEMOL**: *Boundless Efficient Machine-Oriented Language*
 > Repozytorium: `github.com/bemol-lang/bemol` · rozszerzenie plików: `.bmol`
+> Jak język działa w środku: [**bemol-wnetrze.md**](bemol-wnetrze.md)
 > Status: **szkic roboczy** · ostatnia aktualizacja: 2026-10-16
 
 BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. Daje dostęp do pamięci z precyzją asemblera (każdy bajt, każdy bit), ale z czytelną składnią i automatycznym zarządzaniem pamięcią.
@@ -29,11 +30,11 @@ BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. D
 15. [Struktury (`STRUCT`)](#15-struktury-struct)
 16. [Aliasy (`ALIAS`)](#16-aliasy-alias)
 17. [Wyjście poza blok: `.rangeError`](#17-wyjście-poza-blok-rangeerror)
-18. [Ostrzeżenia (`WARNING`)](#18-ostrzeżenia-warning)
+18. [Ostrzeżenia i komunikaty błędów](#18-ostrzeżenia-i-komunikaty-błędów)
 19. [Zestawienie operacji na `pointer`](#19-zestawienie-operacji-na-pointer)
 20. [Kompilator](#20-kompilator)
 21. [Język a biblioteka standardowa](#21-język-a-biblioteka-standardowa)
-22. [Obiekty (plany)](#22-obiekty-plany)
+22. [Obiekty: klasy uproszczone](#22-obiekty-klasy-uproszczone)
 23. [Przykładowy program](#23-przykładowy-program)
 24. [Otwarte pytania](#24-otwarte-pytania)
 
@@ -56,6 +57,10 @@ BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. D
 **Co ma kosztować zero, musi być znane podczas kompilacji.** Rozmiary typów, stałe `CONST`, aliasy i struktury są ustalone przed uruchomieniem programu i kompilator po prostu je podstawia. Elastyczność dają zmienne, indeksy i widoki.
 
 **Nic kosztownego nie dzieje się bez wiedzy programisty.** Kontrole i pomoce (wzory pamięci, ostrzeżenia, `HALT`) programista włącza świadomie, a w finalnym programie może je wyłączyć tam, gdzie liczy się każdy cykl.
+
+**Błąd mówi co, gdzie, dlaczego i jak naprawić.** Komunikaty kompilatora i programu są przejrzyste dla człowieka i jednoznaczne dla agenta AI (sekcja 18).
+
+**Proste dla człowieka na zewnątrz, optymalne dla maszyny w środku.** Programista opisuje, czego chce, a rachunek przesunięć i adresów wykonują kompilator i menedżer pamięci. Jak to działa w środku, opisuje osobny dokument [**bemol-wnetrze.md**](bemol-wnetrze.md): im lepiej programista rozumie wnętrze języka, tym lepiej rozumie narzędzie, którym pracuje.
 
 **Kolejność bajtów: little-endian.** Bajt 0 jest najmniej znaczący. Blok czytamy jak zapis binarny, „od prawej do lewej”. To naturalny porządek procesorów x86 i ARM.
 
@@ -221,6 +226,8 @@ Procesor ma instrukcje tylko dla szerokości 8, 16, 32 i 64 bitów. Pozostałe s
 | **pozostałe** | każda inna (1–7, 9–15, 12, 14...) | elementy mogą zaczynać się w środku bajtu: potrzebne przesunięcia bitów i maski | najwolniejsze jako soczewka |
 
 Różnica jest największa przy **soczewkach i operacjach blokowych** na dużych blokach (`ptr.unsigned_12[n]`, `ptr.unsigned_24 += 1`). Pojedyncza zmienna (`x as unsigned_14`) leży w pełnych bajtach, więc kosztuje tylko jedną dodatkową maskę przy zapisie, żeby zawinąć się na N bitach.
+
+Zasada do zapamiętania: **szerokości 8, 16, 32 i 64 są natywne.** Język nie ma dla nich osobnych nazw (np. `fast_16`), bo byłyby to synonimy bez nowej treści. Zamiast tego środowisko programistyczne może wyróżniać szerokości natywne (np. kolorem) i podpowiadać przy nienatywnych, a kompilator w kompilacji testowej zgłasza informację (nie ostrzeżenie), gdy operacja blokowa na dużym bloku używa szerokości nienatywnej.
 
 **Zalecenie:** gdy liczy się szybkość, a format danych nie jest narzucony, wybieraj szerokości natywne. Szerokości nietypowe są dla danych, które już mają taki format (surowe zdjęcia 12-bitowe, dźwięk 24-bitowy, pola bitowe w strukturach). Częstym rozwiązaniem jest wczytanie danych nietypowych raz, zamiana na typ natywny (np. `unsigned_12` → `unsigned_16`), przetworzenie i zapisanie z powrotem.
 
@@ -462,6 +469,8 @@ przetwarzaj.end
 
 **Rekurencja:** gdy wpis `PERSISTENT` jest zajęty przez trwające wywołanie, kolejne wywołanie dostaje zwykły blok. `PERSISTENT` to optymalizacja, więc w trudnym przypadku z niej rezygnuje, a program działa poprawnie.
 
+> Jak to działa w środku: [bemol-wnetrze.md, rozdział 7 (`PERSISTENT` w praktyce)](bemol-wnetrze.md#7-persistent-w-praktyce)
+
 ---
 
 ## 8. Menedżer pamięci
@@ -470,17 +479,18 @@ przetwarzaj.end
 
 Menedżer pamięci to **tablica dynamiczna**, w której każdy wiersz opisuje jeden przydział. **Numer wiersza jest identyfikatorem bloku**: zmienna `pointer` przechowuje tylko ten numer (4 bajty). Dostęp do wpisu jest natychmiastowy (początek tablicy + numer × 32). Numery po zwolnionych przydziałach są ponownie wykorzystywane dzięki liście wolnych miejsc.
 
-| Pole | Rozmiar | Opis |
-|---|---|---|
-| adres | 8 B | położenie bloku w pamięci (dla widoku: numer opisu w tablicy widoków) |
-| długość | 8 B | rozmiar bloku w bajtach (do 2^64 B ≈ 16 milionów TB) |
-| shares | 4 B | liczba użyczeń |
-| flagi | 4 B (32 bity) | cechy serwisowe bloku, tabela poniżej |
-| zarezerwowane | 4 B | do wykorzystania w przyszłości |
-| liczba widoków | 2 B | ile widoków patrzy na ten blok (do 65 535) |
-| zarezerwowane | 2 B | do wykorzystania w przyszłości |
+| Przesunięcie | Pole | Rozmiar | Opis |
+|---|---|---|---|
+| 0 | adres | 8 B | położenie bloku w pamięci |
+| 8 | długość | 8 B | rozmiar bloku w bajtach (do 2^64 B ≈ 16 milionów TB) |
+| 16 | shares | 4 B | liczba zmiennych trzymających blok |
+| 20 | flagi | 2 B (16 bitów) | cechy serwisowe bloku, tabela poniżej |
+| 22 | liczba widoków | 2 B | ile widoków patrzy na ten blok (do 65 535) |
+| 24 | zarezerwowane | 8 B | jeden ciągły zapas na przyszłość |
 
-**Wpis ma 32 bajty**, w tym 6 bajtów zarezerwowanych na przyszłość (np. numer maszyny w klastrze, na której leży blok). To potęga dwójki, więc procesor znajduje wpis jednym przesunięciem bitowym, a w jednej linii pamięci podręcznej (64 B) mieszczą się dokładnie dwa wpisy. Milion jednoczesnych bloków to 32 MB.
+**Wpis ma 32 bajty.** Pola leżą w naturalnym porządku, bez dziur, a cały zapas to **8 bajtów w jednym kawałku na końcu wpisu**, więc zmieści w przyszłości pełną 64-bitową wartość (np. numer maszyny w klastrze, na której leży blok).
+
+Wpis z flagą `VIEW` używa tych samych 32 bajtów inaczej: zamiast adresu przechowuje przesunięcie w rodzicu, a w zapasie numer rodzica i numer opisu prostokąta (sekcja 13). To potęga dwójki, więc procesor znajduje wpis jednym przesunięciem bitowym, a w jednej linii pamięci podręcznej (64 B) mieszczą się dokładnie dwa wpisy. Milion jednoczesnych bloków to 32 MB.
 
 Gdy `.update` musi przenieść blok w inne miejsce, zmienia się tylko adres we wpisie. Wszystkie zmienne i widoki wskazujące ten przydział od razu widzą nowy adres.
 
@@ -500,7 +510,9 @@ Gdy `.update` musi przenieść blok w inne miejsce, zmienia się tylko adres we 
 | 7 | `PRODUCTION_MEMORY_PATTERN` | wypełnianie nowych bajtów wzorem w finalbake |
 | 8 | `rangeError`, bit młodszy | tryb wyjścia poza blok (sekcja 17) |
 | 9 | `rangeError`, bit starszy | |
-| 10–31 | — | wolne |
+| 10–15 | — | wolne |
+
+Używanych jest 10 z 16 bitów, a 7 (bit 5 i bity 10–15) zostaje na przyszłe cechy.
 
 **Tryb `rangeError`** zapisany jest na dwóch bitach: wartość = bit 9 × 2 + bit 8, czyli 0 = `DEFAULT`, 1 = `CONTINUE`, 2 = `WARNING`, 3 = `HALT`. Wartość 0 oznacza „sprawdź ustawienie domyślne programu” (`DEFAULT_RANGE_ERROR`).
 
@@ -515,6 +527,8 @@ Gdy `.update` musi przenieść blok w inne miejsce, zmienia się tylko adres we 
 Każdy licznik mówi jedną rzecz: `.shares` to liczba zmiennych trzymających blok, a liczba widoków to liczba widoków na niego patrzących.
 
 Zmienna `GLOBAL` należy do programu głównego, więc jej `.shares` nie spadnie do 0 przed końcem programu. Pamięć można zwolnić wcześniej ręcznie, przez `.release`.
+
+> Jak to działa w środku: [bemol-wnetrze.md, rozdział 1 (menedżer bloków bajt po bajcie)](bemol-wnetrze.md#1-menedżer-bloków)
 
 ---
 
@@ -562,6 +576,8 @@ Soczewka służy więc do **ustawienia pozycji**, a druga strona mówi, **ile mi
 
 **Ostrzeżenie kompilatora:** gdy druga strona jest szersza niż soczewka (np. `int` z soczewką `.byte`), kompilator zgłasza ostrzeżenie, np. „zapis 4 bajtów przez soczewkę 1-bajtową”. Kod działa zgodnie z regułą 1, a ostrzeżenie pomaga wychwycić przypadkowe nadpisanie sąsiednich bajtów. Można je wyłączyć.
 
+> Jak to działa w środku: [bemol-wnetrze.md, rozdział 3 (obliczanie pozycji w soczewkach)](bemol-wnetrze.md#3-soczewki-obliczanie-pozycji)
+
 ---
 
 ## 10. Odłamki: niepełne elementy
@@ -589,6 +605,8 @@ y = ptr.float[500]             # od bajtu 2000: całkowicie poza blokiem, same z
 ```
 
 Odłamek typu `float` zwykle nie ma sensu liczbowego. To błąd założeń programisty (blok o złym rozmiarze). Zalecenie: przydzielaj bloki w jednostkach typu, z którym pracujesz, np. `new[1024*float]`.
+
+> Jak to działa w środku: [bemol-wnetrze.md, rozdział 6 (odłamki w praktyce)](bemol-wnetrze.md#6-odłamki-w-praktyce)
 
 ---
 
@@ -727,19 +745,35 @@ Kompilator zamienia to na najszybsze kopiowanie pamięci, jakie ma procesor. Pro
 
 ### Widoki w menedżerze pamięci
 
-Każdy widok ma **własny wpis w menedżerze** (flaga `VIEW`) z własnym `.shares` i długością. W polu adresu wpis widoku przechowuje numer swojego **opisu w osobnej tablicy widoków**:
+Każdy widok ma **własny wpis w menedżerze bloków** (flaga `VIEW`). Widok nie ma własnej pamięci ani zapasu, więc pola wpisu mają inne znaczenie:
+
+| Przesunięcie | Zwykły blok | Widok (`VIEW`) |
+|---|---|---|
+| 0 (8 B) | adres | przesunięcie w rodzicu (w bajtach) |
+| 8 (8 B) | długość | długość widoku |
+| 16 (4 B) | shares | shares widoku |
+| 20 (2 B) | flagi | flagi |
+| 22 (2 B) | liczba widoków | 0 (widok widoku jest spłaszczany, patrz niżej) |
+| 24 (4 B) | zarezerwowane | **numer rodzica**: numer wiersza rodzica w tablicy menedżera bloków |
+| 28 (4 B) | zarezerwowane | **numer opisu prostokąta** (0 = widok paskowy, bez opisu) |
+
+**`viewPortion` to sam wpis**: rodzic, przesunięcie i długość mieszczą się w nim w całości.
+
+**`viewRectangle` ma dodatkowo 16-bajtowy opis** w osobnej tablicy opisów prostokątów:
 
 | Pole opisu | Rozmiar | Znaczenie |
 |---|---|---|
-| rodzic | 4 B | numer wpisu bloku, na który patrzy widok |
-| przesunięcie | 8 B | początek widoku w bloku rodzica (w bajtach) |
 | bajty wiersza | 8 B | szerokość jednego wiersza widoku |
-| wiersze | 8 B | liczba wierszy |
 | krok | 8 B | odległość między początkami wierszy w rodzicu |
 
-**`viewPortion` to prostokąt z jednym wierszem**, więc jeden format opisu obsługuje oba kształty.
+Liczba wierszy nie jest zapisywana, bo wynika z długości: wiersze = długość / bajty wiersza.
 
-**Dostęp do danych:** adres rodzica (odczytany raz przed pętlą) + przesunięcie + numer wiersza × krok + pozycja w wierszu. Widok pamięta numer rodzica, a nie adres, więc po przeniesieniu rodzica przez `.update` nadal wskazuje właściwe miejsce.
+**Dostęp do bajtu nr k widoku:**
+
+- widok paskowy: adres = adres rodzica + przesunięcie + k,
+- widok prostokątny: wiersz = k / bajty wiersza, kolumna = k % bajty wiersza, adres = adres rodzica + przesunięcie + wiersz × krok + kolumna.
+
+Adres rodzica jest odczytywany z jego wpisu (raz przed pętlą). Widok pamięta numer rodzica, a nie adres, więc po przeniesieniu rodzica przez `.update` nadal wskazuje właściwe miejsce. W pętli kompilator nie dzieli przy każdym dostępie, tylko przechodzi wiersz po wierszu i na końcu wiersza przeskakuje o krok. Przykład krok po kroku: [bemol-wnetrze.md, rozdział 5](bemol-wnetrze.md#5-widoki-krok-po-kroku).
 
 **Widok widoku** jest przy tworzeniu zamieniany na widok bezpośrednio na oryginalny blok (przesunięcia się sumują). Dostęp to zawsze jeden poziom, bez łańcucha pośredników.
 
@@ -794,6 +828,8 @@ kafelek.halffloat *= 1.2       # rozjaśnienie jednego kafelka, zapis wprost do 
 
 Pamięć zajmuje tylko przetwarzany fragment, a reszta pliku zostaje na dysku. W przyszłości ten sam mechanizm może sięgać do plików na innych maszynach (klastry, nieograniczone pola danych).
 
+> Jak to działa w środku: [bemol-wnetrze.md, rozdział 8 (pliki mapowane)](bemol-wnetrze.md#8-pliki-mapowane)
+
 ---
 
 ## 15. Struktury (`STRUCT`)
@@ -826,6 +862,8 @@ Raw12 as STRUCT { P0 as unsigned_12, P1 as unsigned_12 }                        
 ```
 
 `Raw12` pokazuje, jak upakować dane bez żadnych przerw: grupuje się elementy tak, żeby razem dały pełne bajty. Dwa piksele 12-bitowe (format surowych zdjęć z aparatów) to dokładnie 3 bajty. Gdy potrzebny jest ciągły strumień bitów bez granic elementów, służą do tego `.bit[]`, `ptr.unsigned_N[n]` i `.value`.
+
+> Jak to działa w środku: [bemol-wnetrze.md, rozdział 4 (struktury z polami bitowymi)](bemol-wnetrze.md#4-struktury-z-polami-bitowymi)
 
 ---
 
@@ -875,7 +913,9 @@ Standardowo `DEFAULT_RANGE_ERROR = HALT`. Tryb każdego bloku jest zapisany w bi
 
 ---
 
-## 18. Ostrzeżenia (`WARNING`)
+## 18. Ostrzeżenia i komunikaty błędów
+
+### Ostrzeżenia (`WARNING`)
 
 **Kompilacja testowa:** kompilator dołącza zapisywanie ostrzeżeń do pliku logu obok programu (`nazwa_programu.warnings.log`). **Każde miejsce w kodzie zgłasza ostrzeżenie tylko raz**, a przy kolejnych wystąpieniach rośnie licznik. Na końcu programu w logu pojawia się podsumowanie, np. „linia 128: 999 999 kolejnych wystąpień”. Dzięki temu pętla wychodząca milion razy poza blok nie zaleje logu.
 
@@ -892,6 +932,51 @@ mojeOstrzezenia.end
 Ostrzeżenie zawiera: numer bloku, pozycję dostępu, długość bloku, rodzaj dostępu (odczyt czy zapis) i miejsce w kodzie (plik i linia).
 
 W finalbake bez `WARNING_HANDLER` tryb `WARNING` zachowuje się dokładnie jak `CONTINUE`, więc kompilator może wygenerować dla niego ten sam, najprostszy kod.
+
+### Komunikaty błędów
+
+Wiele kompilatorów zgłasza błędy tak, że nie wiadomo, co je wywołało. W BEMOL-u **każdy błąd mówi co, gdzie, dlaczego i jak naprawić**, a kompilator wypisuje go w dwóch formach z jednego źródła: dla człowieka i dla agenta AI.
+
+**Forma dla człowieka:**
+
+```
+błąd BML-E0412: zwalniasz blok, na który patrzą widoki
+  --> obraz.bmol:57:5
+   |
+57 |     obraz.release
+   |     ^^^^^^^^^^^^^ blok `obraz` ma 1 aktywny widok
+   |
+   = widok `kafelek` utworzony tutaj: obraz.bmol:41:15
+   = zasada: bloku z aktywnymi widokami nie można zwolnić (specyfikacja, sekcja 13)
+   = pomoc: najpierw zwolnij widok: `kafelek.release`
+```
+
+**Forma dla agenta AI** (opcja kompilatora `-diagnostics=json`):
+
+```json
+{
+  "code": "BML-E0412",
+  "severity": "error",
+  "message": "release of block with active views",
+  "file": "obraz.bmol", "line": 57, "column": 5, "length": 13,
+  "related": [
+    { "role": "view_created", "file": "obraz.bmol", "line": 41, "column": 15 }
+  ],
+  "rule": "spec#13",
+  "fix": { "insert_before_line": 57, "text": "kafelek.release" }
+}
+```
+
+**Zasady:**
+
+1. **Stały kod błędu** (`BML-E0412`). Kod nigdy się nie zmienia i ma własną stronę w dokumentacji z przykładami. Agent AI może go wyszukać, a człowiek wkleić w wyszukiwarkę.
+2. **Dokładne miejsce:** plik, linia, kolumna i podkreślenie fragmentu, a nie tylko numer linii.
+3. **Powiązane miejsca:** gdy przyczyna leży gdzie indziej (widok utworzony wyżej, `CONST` zadeklarowane w innym pliku), komunikat wskazuje także tamto miejsce.
+4. **Zasada, która została złamana**, z odnośnikiem do sekcji specyfikacji.
+5. **Konkretna propozycja naprawy.** W formie JSON jako dokładny tekst do wstawienia, który agent może zastosować automatycznie.
+6. **Jedna przyczyna, jeden błąd.** Gdy jeden błąd pociąga za sobą kolejne, kompilator zgłasza przyczynę, a skutki oznacza jako „następstwo BML-E...” albo pomija. Nie zalewa programisty lawiną komunikatów.
+7. **Ten sam format dla błędów w działającym programie.** `HALT` z `.rangeError` wypisuje kod, nazwę zmiennej, pozycję, długość bloku, linię i łańcuch wywołań funkcji. Log ostrzeżeń z kompilacji testowej też ma oba formaty.
+8. **Pola formy JSON zawsze po angielsku i stałe**, a komunikat dla człowieka w języku programisty. Pierwszym językiem komunikatów jest angielski (pod niego budowana będzie społeczność), drugim polski.
 
 ---
 
@@ -959,6 +1044,8 @@ Model pamięci BEMOL-a (uchwyty w menedżerze, licznik `.shares`, kontrola zakre
 2. **Usuwanie zbędnych zmian `.shares`.** Licznik zmienia się przy wejściu do bloku programu i wyjściu z niego, nigdy przy samym dostępie do danych. Kompilator usuwa pary +1/−1, które się znoszą, np. gdy funkcja tylko czyta blok i nigdzie go nie przekazuje.
 3. **Sprawdzanie zakresu raz przed pętlą.** W pętli od 0 do N kompilator sprawdza przed jej rozpoczęciem, czy cały zakres mieści się w bloku, a w środku pętli nie sprawdza już niczego.
 
+> Jak to działa w środku: [bemol-wnetrze.md, rozdział 9 i 10 (optymalizacje kompilatora i kompilacje cząstkowe)](bemol-wnetrze.md#9-optymalizacje-kompilatora)
+
 ---
 
 ## 21. Język a biblioteka standardowa
@@ -973,14 +1060,47 @@ Powody: algorytmów jest bardzo dużo, zmieniają się z czasem, a najlepsza imp
 
 ---
 
-## 22. Obiekty (plany)
+## 22. Obiekty: klasy uproszczone
 
-Obiekty (klasy) zostaną opisane szczegółowo w osobnym etapie. Ustalone założenia:
+Klasyczna obiektowość (C++, Java) zawiera mechanizmy, które szkodzą maszynie:
 
-- **Obiekty to struktury poza blokami**, z **własnym menedżerem pamięci**, odrębnym od menedżera bloków.
-- **Przy usunięciu obiektu** menedżer obiektów zgłasza menedżerowi bloków, że obiekt odchodzi, a jego pola wskaźnikowe puszczają trzymane bloki. Menedżer bloków zmniejsza ich `.shares` i zwalnia te, których nikt inny nie używa.
-- **Życie obiektu nie powinno wynikać ze zliczania odwołań między obiektami.** Gdyby tak było, dwa obiekty wskazujące na siebie nawzajem (np. samochód trzymający koło i koło znające swój samochód) trzymałyby się w pamięci na zawsze. Życie obiektu ma wynikać z właściciela (funkcji, programu lub obiektu, który go utworzył) albo z jawnego usunięcia przez programistę.
-- **Słabe wskaźniki (`WEAK`)**, czyli wskaźniki, które „wiedzą, gdzie jest obiekt, ale go nie trzymają” (jak `TWeakObjectPtr` w Unreal Engine), zostaną rozważone przy projektowaniu klas. Jeśli będą potrzebne, ich mechanizm (np. licznik generacji wpisu) trafi do menedżera obiektów, a nie do menedżera bloków: bloki nie tworzą cykli, więc słabych wskaźników nie potrzebują.
+- **dziedziczenie z metodami wirtualnymi**: wywołanie metody wymaga odczytania adresu funkcji z tabeli w czasie działania, więc kompilator nie może wkleić funkcji w miejsce wywołania ani użyć instrukcji wektorowych,
+- **obiekty porozrzucane po pamięci**: każdy obiekt to osobny przydział, a tablica obiektów to tablica wskaźników; przejście po milionie obiektów to milion skoków w losowe miejsca pamięci,
+- **ukryte operacje**: konstruktory kopiujące, destruktory i przydziały pamięci wywoływane niejawnie przy zwykłym `=`.
+
+Z tych samych powodów silniki gier odchodzą od klasycznych obiektów przy dużej liczbie jednostek (Mass Entity w Unreal Engine, DOTS w Unity).
+
+**W BEMOL-u klasa to struktura z funkcjami.** Uproszczone obiekty są lepsze dla maszyny, a więc i dla programisty:
+
+```
+CLASS Czastka
+    .pozycja as float
+    .predkosc as float
+
+    FUNCTION .Krok(dt as float): void
+        .pozycja = .pozycja + .predkosc * dt
+    Krok.end
+Czastka.end
+
+czastki as pointer
+czastki.new[100000*Czastka]          # 100 000 cząstek w jednym ciągłym bloku
+czastki.Czastka[1000].Krok(0.016)    # metoda na cząstce nr 1000
+```
+
+- **Dane klasy to `STRUCT`**: ciasny układ pól, stały rozmiar, może być soczewką.
+- **Metody to zwykłe funkcje** z ukrytym `this`, rozstrzygane podczas kompilacji. Zero kosztu w działającym programie.
+- **Bez dziedziczenia i metod wirtualnych.** Zamiast dziedziczenia **kompozycja**: struktura zawiera inną strukturę jako pole. Gdy potrzebne są różne zachowania, pole typu i zwykły warunek `if`, jawny i przewidywalny.
+- **Konstruktor to zwykła funkcja inicjalizująca**, wywoływana jawnie, bez niejawnych kopii.
+- **`PRIVATE`** ukrywa pola i metody; sprawdzane tylko podczas kompilacji, więc nic nie kosztuje.
+
+### Pamięć obiektów: bez osobnego menedżera
+
+Obiekt to tylko dane w pamięci, więc **wszystko obsługuje istniejący menedżer bloków**, bez nowych mechanizmów:
+
+- **obiekt jako zmienna** (lokalna lub `GLOBAL`) leży na stosie jak każda struktura. Kompilator zna jego pola, więc pola typu `pointer` liczą się do `.shares` jak zwykłe zmienne,
+- **obiekty w bloku** (`ptr.new[100000*Czastka]`) to surowe dane bloku, a ich pola wskaźnikowe są zwykłymi liczbami, zgodnie z regułą z sekcji 6.
+
+Dzięki temu obiekty nie tworzą cykli, słabe wskaźniki (`WEAK`) nie są potrzebne, a tablica 100 000 cząstek to jeden ciągły blok, który `for.parallel` i instrukcje wektorowe przetwarzają z pełną prędkością.
 
 ### Notacja klas
 
@@ -1007,7 +1127,7 @@ Zwieksz.end
 - **Metody można definiować poza klasą** z pełną nazwą (`FUNCTION Klasa.Metoda`), w dowolnym miejscu pliku. Przy dużych klasach deklaracja klasy staje się czytelnym „spisem treści”.
 - **Kropka na początku poza klasą to błąd kompilacji**, bo nie ma właściciela, do którego mogłaby się odnosić.
 - `this` piszemy małymi literami, bo to odwołanie, używane jak zmienna, a nie słowo budujące strukturę programu.
-- **Konstruktor:** obiekt musi mieć konstruktor z parametrami. Wstępna propozycja: parametry należą do konstruktora, a sama deklaracja klasy jest bez parametrów (`CLASS Klasa`). Do ustalenia.
+- **Konstruktor:** wstępna propozycja: parametry należą do konstruktora (zwykłej funkcji inicjalizującej), a sama deklaracja klasy jest bez parametrów (`CLASS Klasa`). Szczegóły do ustalenia.
 
 ---
 
@@ -1077,7 +1197,8 @@ potega.end
 
 ## 24. Otwarte pytania
 
-- [ ] **Klasy i obiekty:** konstruktor i jego parametry, `PRIVATE`, tworzenie i usuwanie obiektów, menedżer obiektów, sposób ustalania życia obiektu, ewentualne `WEAK` (sekcja 22).
+- [ ] **Klasy:** składnia konstruktora i jego parametrów, szczegóły `PRIVATE`, kompozycja struktur w praktyce (sekcja 22).
+- [ ] **Katalog kodów błędów:** numeracja `BML-E...` (i ostrzeżeń `BML-W...`) oraz strony dokumentacji dla każdego kodu.
 - [ ] **Praca równoległa:** `for.parallel`, `split.chunk`, `split.cores`, tryby widoków (`read` / `write`).
 - [ ] **Nazwy operacji wbudowanych:** liczenie bitów, redukcje (suma, min, max, iloczyn skalarny), zamiana kolejności bajtów.
 - [ ] **Podmiana funkcji w działającym programie** (cel na przyszłość, sekcja 20).
