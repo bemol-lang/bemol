@@ -108,7 +108,7 @@ Język rozróżnia wielkość liter.
 - **Słowa przepływu sterowania, operatory, funkcje wbudowane i łączniki piszemy małymi literami:** `if`, `then`, `elseif`, `else`, `for`, `to`, `step`, `do`, `while`, `repeat`, `until`, `foreach`, `in`, `break`, `continue`, `switch`, `case`, `as`, `return`, `this`, `and`, `or`, `xor`, `not`, `shl`, `shr`, `rol`, `ror`, `saturate`, `print`, `println`.
 - **Wbudowane stałe programu** piszemy wielkimi literami: `BUILD_MODE`, `ARGS`.
 - **Wieloczłonowe nazwy wbudowane w język** piszemy z wielką literą na początku kolejnych słów: `rangeError`, `copyPortion`, `viewRectangle`.
-- **Polecenia dla kompilatora** zaczynają się od `@` (np. `@ACCEPT`, sekcja 20). Znak `@` jest zarezerwowany dla nich: od razu widać, co jest logiką programu, a co instrukcją dla narzędzi.
+- **Znaczniki** zaczynają się od `@`: `@ACCEPT` (potwierdzenie ostrzeżenia, sekcja 20) i `@ANYTHING_ELSE` (gałąź „wszystko inne” w `case`, sekcja 4). Znak `@` jest zarezerwowany dla nich i znaczy zawsze to samo: **to nie jest wartość ani nazwa, tylko znacznik dla kompilatora**. Dzięki temu znacznika nie da się pomylić ze stałą `CONST` ani wartością `ENUM`, które też pisze się wielkimi literami.
 - **Nazwy zmiennych, funkcji, klas, stałych i wartości wyliczeń programisty są dowolne.** Zalecenia stylu: sekcja 26.
 
 ### Komentarze
@@ -562,7 +562,7 @@ switch kanal
         nazwa = ZIELONY_LUB_NIEBIESKI
     case 10 to 20
         nazwa = ZAKRES
-    else
+    case @ANYTHING_ELSE
         nazwa = NIEZNANY
 switch.end
 ```
@@ -570,14 +570,39 @@ switch.end
 - **bez „przelatywania”**: każdy `case` kończy się sam, gdy zaczyna się kolejny, więc nie ma `break`. Kilka wartości po przecinku, zakres przez `to`,
 - **wartości w `case` muszą być stałe** (literały albo `CONST`). Kompilator zamienia `switch` na tablicę skoków, czyli jeden skok zamiast serii porównań,
 - **tylko liczby całkowite, `bit` i wartości `ENUM`**, bez floatów (porównanie na równość liczb zmiennoprzecinkowych jest zawodne),
-- **`else` jest opcjonalne**; gdy nic nie pasuje i nie ma `else`, nic się nie dzieje.
+- **w `switch` nie ma `else`.** Wartości, których nie złapał żaden `case`, obsługuje gałąź ze znacznikiem `@ANYTHING_ELSE` (niżej),
+- **gałąź „wszystko inne” jest opcjonalna**: gdy nic nie pasuje i nie ma `@ANYTHING_ELSE`, żadna gałąź się nie wykonuje, a program przechodzi do instrukcji po `switch.end`.
+
+**`@ANYTHING_ELSE`: „wszystko inne”.** Znacznik może stać sam (`case @ANYTHING_ELSE`, jak w przykładzie wyżej) albo na liście wartości istniejącego `case`. To drugie przydaje się, gdy wszystko inne ma być obsłużone tak samo jak konkretne wartości:
+
+```
+switch kanal
+    case 0
+        nazwa = CZERWONY
+    case 1, 2
+        nazwa = ZIELONY_LUB_NIEBIESKI
+    case 10 to 20, @ANYTHING_ELSE
+        nazwa = ZAKRES                  # 10...20 oraz każda wartość, której nie złapał inny case
+    case 30
+        nazwa = SPECJALNY
+switch.end
+```
+
+- **bez kopiowania kodu i bez przestawiania gałęzi**: wiadomo od razu, która gałąź przejmuje wszystko inne,
+- **`@ANYTHING_ELSE` może być w `switch` tylko raz.** Drugi to błąd kompilacji, bo dwie gałęzie miałyby ten sam warunek,
+- **może stać przy dowolnym `case`, nie tylko ostatnim.** Łapie tylko wartości, których nie obsługuje żaden inny `case`, więc kolejność od góry go nie dotyczy (`case 30` w przykładzie działa normalnie),
+- przy `ENUM` wyłącza ostrzeżenie o brakujących wartościach.
+
+> **Dlaczego w `switch` nie ma `else`?** Samodzielne `else` robiłoby dokładnie to samo co `case @ANYTHING_ELSE`, a dwa sposoby zapisu jednej rzeczy to zbędne zamieszanie: trzeba by pilnować, żeby nie użyć obu naraz. Jeden znacznik działa wszędzie tak samo, sam albo na liście. `else` zostaje w `if`, gdzie nie ma konkurencji.
+
+> **Dlaczego `@` i wielkie litery?** `@ANYTHING_ELSE` nie jest wartością, tylko znacznikiem zmieniającym znaczenie całej gałęzi. Wielkie litery sprawiają, że przy przeglądaniu kodu od razu widać, która gałąź przejmuje nieobsłużone wartości, a `@` odróżnia znacznik od wartości `ENUM` na tej samej liście: w `case ZIELONY, NIEBIESKI, @ANYTHING_ELSE` widać od razu, co jest wartością, a co nie. W C podobny efekt daje `case 10: default:` jeden pod drugim, ale działa tylko dzięki „przelatywaniu” między etykietami, którego BEMOL nie ma.
 
 **Nakładające się wartości: pierwsza pasująca gałąź wygrywa** (kolejność od góry do dołu). Kompilator i tak przypisuje każdą wartość do gałęzi podczas kompilacji, więc nie kosztuje to nic. Ostrzeżenia:
 
 - **szczególny przypadek przed ogólnym** (`case 5`, potem `case 1 to 10`): ostrzeżenie informacyjne, że 5 należy do obu gałęzi i wykona się pierwsza. Często to celowy wzorzec,
 - **gałąź martwa** (`case 1 to 10`, potem `case 5`): mocniejsze ostrzeżenie, że `case 5` nigdy się nie wykona. Prawie zawsze to pomyłka.
 
-**Kompletność przy `ENUM`:** gdy `switch` na wyliczeniu nie obsługuje wszystkich wartości i nie ma `else`, kompilator ostrzega: „brak obsługi wartości GORACO”. Po dodaniu nowej wartości do wyliczenia kompilator wskaże wszystkie miejsca do uzupełnienia.
+**Kompletność przy `ENUM`:** gdy `switch` na wyliczeniu nie obsługuje wszystkich wartości i nie ma `@ANYTHING_ELSE`, kompilator ostrzega: „brak obsługi wartości GORACO”. Po dodaniu nowej wartości do wyliczenia kompilator wskaże wszystkie miejsca do uzupełnienia.
 
 Ostrzeżenie, które programista uznaje za zamierzone, potwierdza jawnie przez `@ACCEPT` (sekcja 20).
 
@@ -1791,7 +1816,8 @@ Kompilator wymusza tylko wielkie litery w słowach kluczowych. Nazwy programisty
 - **stałe `CONST` i wartości `ENUM` wielkimi literami** (`ROZMIAR`, `GORACO`), żeby od razu było widać, że to stałe,
 - **zmienne i funkcje** z wielką literą na początku kolejnych słów (`isLightEnabled`, `rozjasnijObraz`),
 - **struktury, klasy i wyliczenia z wielkiej litery** (`Color`, `Czastka`, `Stan`),
-- **deklaracje globalne na górze pliku**, program główny pod nimi, funkcje na dole (sekcja 3).
+- **deklaracje globalne na górze pliku**, program główny pod nimi, funkcje na dole (sekcja 3),
+- **`@ANYTHING_ELSE` na końcu listy wartości** w `case` (`case 1, 7, 19, @ANYTHING_ELSE`): tam oko go szuka. Inna pozycja jest dozwolona i działa tak samo.
 
 W przyszłości BEMOLIZER może mieć opcjonalne narzędzie do ujednolicania stylu w projekcie, uruchamiane świadomie przez zespół, który tego chce.
 

@@ -531,9 +531,9 @@ Wartości w `case` są stałe, więc kompilator zna je podczas kompilacji i moż
 
 ```
 switch kanal
-    case 5          # gałąź A
-    case 1 to 10    # gałąź B
-    else            # gałąź C
+    case 5                # gałąź A
+    case 1 to 10          # gałąź B
+    case @ANYTHING_ELSE   # gałąź C
 switch.end
 ```
 
@@ -556,3 +556,5 @@ W działającym programie `switch` to wtedy:
 Jedno porównanie i jeden skok, niezależnie od liczby gałęzi. Gdy wartości są bardzo rozrzucone (np. `case 1` i `case 1000000`), kompilator zamiast ogromnej tablicy używa serii porównań albo wyszukiwania binarnego. Wynik jest zawsze ten sam, różni się tylko sposób wykonania.
 
 Przy tym samym przypisywaniu kompilator wykrywa gałęzie martwe (żadna wartość nie trafia do gałęzi) i nakładanie się zakresów, i zgłasza odpowiednie ostrzeżenia.
+
+**`@ANYTHING_ELSE` nic nie kosztuje.** Przy `case 1 to 10, @ANYTHING_ELSE` zamiast osobnej gałęzi C wiersz „pozostałe” w tabeli wskazuje po prostu gałąź B. Krok 1 w działającym programie brzmi wtedy: „czy kanal mieści się w zakresie tablicy? nie → gałąź B”. Ten sam kod co przy osobnej gałęzi `case @ANYTHING_ELSE`, tylko adres skoku jest inny.
