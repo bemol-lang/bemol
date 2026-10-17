@@ -1,20 +1,33 @@
 #!/usr/bin/env python3
 """
-BEMOL ♭ — prototyp tłumacza BEMOL → C (wersja 0)
+BEMOL ♭ — prototyp tłumacza BEMOL → C (wersja 0.3)
 
 Użycie:
-    python3 bemolc.py program.bmol            # kompilacja testowa → ./program
-    python3 bemolc.py -finalbake program.bmol # finalbake (pełna optymalizacja)
-    python3 bemolc.py --emit-c program.bmol   # tylko wygenerowany kod C
-    python3 bemolc.py --debug program.bmol    # pełny ślad przy błędzie wewnętrznym
+    python3 bemolc.py program.bmol                    # kompilacja testowa → ./program
+    python3 bemolc.py -finalbake program.bmol         # finalbake (pełna optymalizacja)
+    python3 bemolc.py --check program.bmol            # tylko sprawdzenie kodu (bez kompilatora C)
+    python3 bemolc.py -diagnostics=json program.bmol  # komunikaty dla narzędzi (jedna linia JSON na komunikat)
+    python3 bemolc.py --emit-c program.bmol           # tylko wygenerowany kod C
+    python3 bemolc.py --debug program.bmol            # pełny ślad przy błędzie wewnętrznym
 
 Wersja 0 obsługuje podzbiór języka opisany w README prototypu.
 Wszystko, czego nie obsługuje, zgłasza błędem BML-E0900 zamiast
 po cichu tłumaczyć źle.
 """
+import json
 import os
 import subprocess
 import sys
+
+DIAG_JSON = any(a in ('-diagnostics=json', '--diagnostics=json') for a in sys.argv)
+
+# Wyjście przekierowane do innego programu (np. VS Code) zawsze w UTF-8, także na Windows.
+for _st in (sys.stdout, sys.stderr):
+    try:
+        if not _st.isatty():
+            _st.reconfigure(encoding='utf-8')
+    except (AttributeError, ValueError):
+        pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -2155,6 +2168,13 @@ LINE_FOOT = '_' * 65
 
 def show(kind, code, msg, src_lines, path, line, col=0, detail='', help=''):
     """Komunikat w formacie BEMOL (sekcja 20 specyfikacji)."""
+    if DIAG_JSON:
+        # forma dla narzędzi i agentów AI: pola po angielsku, stałe; treść dla człowieka
+        print(json.dumps({'code': code, 'severity': 'error' if kind == 'błąd' else 'warning',
+                          'message': msg[:1].upper() + msg[1:], 'file': path or '', 'line': line or 0,
+                          'column': col or 0, 'detail': detail, 'help': help}, ensure_ascii=False))
+        sys.stdout.flush()
+        return
     err = kind == 'błąd'
     out = [LINE_STARS if err else LINE_EQ,
            f'{"ERROR" if err else "WARNING"}: {code}']
@@ -2200,6 +2220,7 @@ def show_plain(kind, code, msg, detail='', help=''):
 def main(argv):
     finalbake = '-finalbake' in argv
     emit_c = '--emit-c' in argv
+    check = '--check' in argv
     files = [a for a in argv[1:] if not a.startswith('-')]
     if len(files) != 1:
         print(__doc__.strip(), file=sys.stderr)
@@ -2217,6 +2238,10 @@ def main(argv):
         return 1
     for code, msg, line, detail, hlp, col in gen.warnings:
         show('ostrzeżenie', code, msg, lines, path, line, col, detail, hlp)
+    if check:
+        if not DIAG_JSON:
+            print(f'sprawdzono: {os.path.basename(path)}, bez błędów')
+        return 0
     base = os.path.splitext(path)[0]
     cpath = base + '.c'
     with open(cpath, 'w', encoding='utf-8') as fh:
@@ -2245,6 +2270,9 @@ def main(argv):
         print(r.stderr.strip(), file=sys.stderr)
         return 1
     run = os.path.basename(exe) if os.name == 'nt' else './' + os.path.basename(exe)
+    if DIAG_JSON:
+        print(json.dumps({'result': 'ok', 'exe': os.path.abspath(exe)}, ensure_ascii=False))
+        return 0
     print(f'{"finalbake" if finalbake else "kompilacja testowa"}: {os.path.basename(exe)}')
     print(f'uruchom: {run}')
     return 0

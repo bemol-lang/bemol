@@ -37,11 +37,26 @@ python3 ../bemolc.py tekstura.bmol         # kompilacja testowa
 tekstura.exe                               # uruchomienie na Windows (Linux/macOS: ./tekstura)
 ```
 
+Na Windows najprościej przez `bemol.bat` (kompiluje i od razu uruchamia program):
+
+```
+..\bemol tekstura.bmol
+..\bemol -finalbake tekstura.bmol
+```
+
+Folder `prototyp` można dodać do zmiennej PATH, wtedy wystarczy `bemol program.bmol` w każdym folderze.
+
+Rozszerzenie BEMOL dla VS Code korzysta z tego samego tłumacza: `Ctrl+F5` kompiluje i uruchamia, a błędy pojawiają się w edytorze przy zapisie.
+
 Wszystkie opcje:
 
 ```
 python3 bemolc.py program.bmol             # kompilacja testowa → program (.exe na Windows)
 python3 bemolc.py -finalbake program.bmol  # finalbake (pełna optymalizacja kompilatora C)
+python3 bemolc.py --check program.bmol     # tylko sprawdzenie kodu, bez kompilatora C
+python3 bemolc.py -diagnostics=json program.bmol   # komunikaty dla narzędzi: jedna linia JSON na komunikat
+python3 bemolc.py --check program.bmol     # tylko sprawdzenie kodu, bez kompilatora C
+python3 bemolc.py -diagnostics=json program.bmol   # komunikaty dla narzędzi: jedna linia JSON na komunikat
 python3 bemolc.py --emit-c program.bmol    # tylko wygenerowany kod C (program.c)
 python3 bemolc.py --debug program.bmol     # pełny ślad Pythona przy błędzie wewnętrznym tłumacza
 ```
@@ -53,6 +68,7 @@ Tłumacz nigdy nie powinien kończyć się surowym śladem Pythona. Jeśli tak s
 | Plik | Zawartość |
 |---|---|
 | `bemolc.py` | tłumacz: lekser, parser, generator kodu C, komunikaty błędów |
+| `bemol.bat` | Windows: kompilacja i uruchomienie jednym poleceniem |
 | `bemol_rt.h` | biblioteka wykonawcza: menedżer bloków (wpisy 32 B), widoki, odczyt/zapis z odłamkami, `.rangeError`, wypisywanie |
 | `przyklady/widok10x10.bmol` | przykład 10 × 10 z `bemol-wnetrze.md`, rozdział 5 |
 | `przyklady/tekstura.bmol` | obraz 256 × 256 pikseli `Color`: widoki, kopie, `foreach`, `saturate`, funkcje |
