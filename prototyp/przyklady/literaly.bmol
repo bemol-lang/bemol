@@ -1,0 +1,29 @@
+# Literały i zmienna zapisywane przez soczewki (specyfikacja, sekcja 10, Z3–Z5)
+
+MAIN BEGIN
+    v as unsigned_32 = &12345678h
+    a as pointer.new[8]
+
+    a.clear; a.byte[0] = &1234h                ; println("1  a.byte[0] = &1234h            ", a : hex)
+    a.clear; a.byte = &12h                     ; println("2  a.byte = &12h                 ", a : hex)
+    a.clear; a.unsigned_16[0] = &1234h         ; println("3  a.unsigned_16[0] = &1234h     ", a : hex)
+    a.clear; a.unsigned_16.at[1] = &1234h      ; println("4  a.unsigned_16.at[1] = &1234h  ", a : hex)
+    a.clear; a.unsigned_32[0] = &12h           ; println("5  a.unsigned_32[0] = &12h       ", a : hex)
+    a.clear; a.fill[&1234h]                    ; println("6  a.fill[&1234h]                ", a : hex)
+    a.clear; a.byte[0] = v                     ; println("7  a.byte[0] = v                 ", a : hex)
+    a.clear; a.unsigned_16[1] = v              ; println("8  a.unsigned_16[1] = v          ", a : hex)
+    a.clear; a.unsigned_32.at[2] = v           ; println("9  a.unsigned_32.at[2] = v       ", a : hex)
+    a.clear; a.unsigned_64[0] = v              ; println("10 a.unsigned_64[0] = v          ", a : hex)
+    a.clear; a.byte[0] = v shr 8               ; println("11 a.byte[0] = v shr 8           ", a : hex)
+    a.clear; a.unsigned_16 = v                 ; println("12 a.unsigned_16 = v             ", a : hex)
+    a.clear; a.fill[v]                         ; println("13 a.fill[v]                     ", a : hex)
+    a.byte.fill[&FFh]; a.byte += 1             ; println("14 a.byte = FF, potem a.byte += 1", a : hex)
+
+    a.unsigned_32.at[0] = v
+    x as unsigned_32 = a.byte[1]
+    y as unsigned_32 = a.unsigned_16[0]
+    println("15 x as unsigned_32 = a.byte[1]   → ", x : hex)
+    println("16 y as unsigned_32 = a.unsigned_16[0] → ", y : hex)
+    z as unsigned_32 = a.unsigned_32.at[1]
+    println("17 z as unsigned_32 = a.unsigned_32.at[1] → ", z : hex)
+MAIN END

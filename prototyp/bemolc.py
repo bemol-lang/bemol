@@ -732,7 +732,8 @@ class Gen:
         raise BemolError(code, msg, ln, col, help=help, detail=detail)
 
     def warn(self, code, msg, line=None, detail='', help=''):
-        self.warnings.append((code, msg, line if line is not None else self.line, detail, help))
+        ln = line if line is not None else self.line
+        self.warnings.append((code, msg, ln, detail, help, self.col if ln == self.line else 0))
 
     def tmp(self, prefix='_t'):
         self.tmpn += 1
@@ -1537,10 +1538,7 @@ class Gen:
             v = self.compound(cur, d.type, op, value)
             self.write_lens(d, off, d.type, v, line)
             return
-        if value.kind == 'Lit':
-            bitoff = off if d.type == 'bit' else f'(({off}) * 8)'
-            self.emit(f'bm_write_bits({d.id}, {bitoff}, {value.bits}, {value.v}ULL, {line});')
-            return
+        self.lit_check(d.type, value, line)
         if value.kind == 'Chain':
             src = self.resolve(value)
             if src.kind == 'lens' and (d.type in self.structs or src.type in self.structs):
@@ -1553,6 +1551,16 @@ class Gen:
             self.err('BML-E0378', f'element .{d.type} można przypisać tylko z innego elementu', line)
         v = self.value_for(d.type, value)
         self.write_lens(d, off, d.type, v, line)
+
+    def lit_check(self, typ, value, line):
+        """Z5: stały literał dłuższy niż soczewka zawija się z ostrzeżeniem."""
+        if value.kind != 'Lit' or typ in self.structs:
+            return
+        bits = 1 if typ == 'bit' else self.size_of(typ) * 8
+        if value.bits > bits:
+            self.warn('BML-W0120', f'literał {value.bits}-bitowy obcięty do {bits} bitów soczewki .{typ}', line,
+                      'zapis przez soczewkę ma zawsze jej szerokość (sekcja 10)',
+                      f'jeśli obcięcie jest celowe: ... as {typ} albo @ACCEPT WARNING; jeśli nie, użyj szerszej soczewki')
 
     def write_lens(self, d, off, typ, v, line):
         if d.type == 'bit':
@@ -1577,6 +1585,7 @@ class Gen:
         el = D('lens', id=b, type=d.type, off=None, indexed=False, constblock=False)
         off = self.lens_off(el)
         if op == '=':
+            self.lit_check(d.type, value, line)
             v = self.value_for(d.type, value)
         else:
             cur, _ = self.lens_read(el)
@@ -1660,6 +1669,7 @@ class Gen:
                     return
                 if lt == 'bit':
                     unsupported('.bit.fill', line)
+                self.lit_check(lt, v, line)
                 c = self.value_for(lt, v)
                 self.emit(f'{{ {self.ctype(lt)} {p} = {c}; bm_fill({blk.c}, &{p}, sizeof {p}, {line}); }}')
                 return
@@ -2205,8 +2215,8 @@ def main(argv):
     except BemolError as e:
         show('błąd', e.code, e.msg, lines, path, e.line, e.col, e.detail, e.help)
         return 1
-    for code, msg, line, detail, hlp in gen.warnings:
-        show('ostrzeżenie', code, msg, lines, path, line, 0, detail, hlp)
+    for code, msg, line, detail, hlp, col in gen.warnings:
+        show('ostrzeżenie', code, msg, lines, path, line, col, detail, hlp)
     base = os.path.splitext(path)[0]
     cpath = base + '.c'
     with open(cpath, 'w', encoding='utf-8') as fh:

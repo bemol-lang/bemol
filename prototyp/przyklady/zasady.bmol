@@ -47,8 +47,11 @@ MAIN BEGIN
     d = blok.doublefloat.at[0]
     println("doublefloat.at[0]       → ", d, "   (oczekiwane 3.25)")
 
-    println("--- Z5: literał szesnastkowy i binarny pisze tyle bitów, ile ma zapis")
-    blok.fill[&FFh]
-    blok.byte[0] = &0000000b
-    println("7 bitów zer w &FFh      → ", blok.byte[0] : hex, "   (oczekiwane &80h)")
+    println("--- Z5: literał to zwykła liczba, soczewka decyduje o szerokości")
+    blok.clear
+    blok.byte[0] = &1234h            # ostrzeżenie BML-W0120 przy kompilacji
+    blok.unsigned_16.at[2] = &1234h
+    blok.byte[6] = &1234h as byte    # jawne obcięcie: bez ostrzeżenia
+    println("&1234h przez .byte[0], .unsigned_16.at[2], as byte →", blok : hex)
+    println("                                   (oczekiwane 34 00 34 12 00 00 34 00)")
 MAIN END

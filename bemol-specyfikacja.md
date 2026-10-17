@@ -836,8 +836,8 @@ Typ `text` to blok pamięci przechowujący tekst UTF-8. Opis: sekcja 18.
 | dziesiętny | zwykła liczba | pełne bajty | `5` | 1 bajt |
 
 - **Zera wiodące się liczą**, bo decyduje zapis, a nie wartość: `&0Fh` to 8 bitów, `&00FFh` to 16 bitów.
-- **Literał szesnastkowy i binarny zmienia dokładnie tyle bitów, ile ma zapis**, a nie do pełnego bajtu.
-- Literał jest zapisywany od wskazanej pozycji w porządku little-endian: najmniej znacząca część trafia na najniższą pozycję. `ptr.byte[0] = &FF00h` daje bajt 0 = `00`, bajt 1 = `FF`.
+- **Długość literału wyznacza wzór w `.fill` bez soczewki** (`ptr.fill[&101b]` powtarza 3 bity). Przy zapisie przez soczewkę literał jest zwykłą liczbą: o szerokości decyduje soczewka (sekcja 10).
+- Wartość leży w pamięci w porządku little-endian: najmniej znacząca część trafia na najniższą pozycję. `ptr.unsigned_16[0] = &FF00h` daje bajt 0 = `00`, bajt 1 = `FF`.
 
 > **Kolejność bajtów w przykładach:** w całej specyfikacji zawartość pamięci pokazywana jest **w kolejności adresów, od bajtu 0**. Liczba `&0100h` (256) leży więc w pamięci jako `00 01`: bajt 0 = `00` (mniej znaczący), bajt 1 = `01`. Czytając tę samą liczbę jak zapis binarny, od prawej do lewej, widzimy `01 00`. Obie formy opisują te same dane.
 
@@ -1112,14 +1112,49 @@ ptr.unsigned_32.at[3] = rozmiar    # 4 bajty od bajtu 3
 
 Typ i pozycję widać w zapisie: `ptr.doublefloat.at[1009]` czyta się „liczba `doublefloat` od bajtu 1009”.
 
-**Z5. Jedyny wyjątek: literał szesnastkowy i binarny zapisuje dokładnie tyle bitów, ile ma zapis**, od pozycji wyznaczonej przez soczewkę. Liczbę bitów widać w samym literale:
+**Z5. Literał to zwykła liczba, także szesnastkowy i binarny.** Przy zapisie przez soczewkę zawija się do jej szerokości jak każda wartość (Z2). Gdy stały literał ma więcej bitów niż soczewka, kompilator zgłasza **ostrzeżenie** („literał 16-bitowy obcięty do 8 bitów soczewki `.byte`”), bo zwykle to literówka albo zła soczewka:
 
 ```
-ptr.byte[7] = &FF0ACh              # 20 bitów od bajtu 7
-ptr.byte[7] = &0111001b            # 7 bitów, ósmy bit bez zmian
+a.byte[0] = &1234h                 # bajt 0 = 34, ostrzeżenie o obcięciu
+a.byte = &1234h                    # każdy bajt = 34, to samo ostrzeżenie
+a.unsigned_16[0] = &1234h          # bajty 0–1: 34 12
+a.unsigned_16.at[1] = &1234h       # bajty 1–2: 34 12
+a.byte[0] = &1234h as byte         # jawne obcięcie: bez ostrzeżenia
+a.byte[0] = wartosc                # zmienna: zawija się bez ostrzeżenia
 ```
 
-> **Dlaczego soczewka zawsze decyduje o szerokości?** Wcześniejsza wersja reguły pozwalała drugiej stronie wyznaczać szerokość: `x as int = ptr.byte[5]` czytało 4 bajty, a `suma = ptr.byte[5] + ptr.byte[6]` po jednym, więc dopisanie `+ 0` zmieniało wynik. Prototyp tłumacza pokazał też, że naturalne `blok.byte[i] = i` zapisywało 8 bajtów. Teraz `.byte` znaczy zawsze jeden bajt, a nietypowy dostęp jest jawny dzięki `.at`.
+Obcięcie bywa zamierzone („odfiltrowanie” części wartości). Wtedy wystarczy `as byte` albo `@ACCEPT WARNING` (sekcja 20). Zapis zmiennej przez węższą soczewkę zawija się bez ostrzeżenia, bo to normalna praca na danych. Do zapisu pojedynczych bitów służą soczewki bitowe (`ptr.bit[3] = 1`, `ptr.unsigned_13[0]`) i pola bitowe struktur.
+
+### Zasady w praktyce: literały i zmienna
+
+Zmienna `v as unsigned_32 = &12345678h`, blok `a as pointer.new[8]` zerowany przed każdym przypadkiem. Bajty pokazane od adresu 0. Wyniki sprawdzone w prototypie tłumacza (`prototyp/przyklady/literaly.bmol`).
+
+| Zapis | Bajty | Dlaczego |
+|---|---|---|
+| `a.byte[0] = &1234h` | `34 00 00 00 00 00 00 00` | soczewka 1 B, literał obcięty (ostrzeżenie BML-W0120) |
+| `a.byte = &12h` | `12 12 12 12 12 12 12 12` | operacja blokowa: każdy bajt osobno |
+| `a.unsigned_16[0] = &1234h` | `34 12 00 00 00 00 00 00` | 2 B, little-endian |
+| `a.unsigned_16.at[1] = &1234h` | `00 34 12 00 00 00 00 00` | `.at`: pozycja w bajtach |
+| `a.unsigned_32[0] = &12h` | `12 00 00 00 00 00 00 00` | krótszy literał uzupełniony zerami do szerokości soczewki |
+| `a.fill[&1234h]` | `34 12 34 12 34 12 34 12` | `.fill` bez soczewki: wzór o długości literału |
+| `a.byte[0] = v` | `78 00 00 00 00 00 00 00` | najmłodszy bajt zmiennej, bez ostrzeżenia |
+| `a.unsigned_16[1] = v` | `00 00 78 56 00 00 00 00` | element nr 1 = bajty 2–3, dwa najmłodsze bajty `v` |
+| `a.unsigned_32.at[2] = v` | `00 00 78 56 34 12 00 00` | całe `v` od bajtu 2 |
+| `a.unsigned_64[0] = v` | `78 56 34 12 00 00 00 00` | `v` rozszerzone do 8 B |
+| `a.byte[0] = v shr 8` | `56 00 00 00 00 00 00 00` | przesunięcie na stole (Z1), potem najmłodszy bajt (Z2) |
+| `a.unsigned_16 = v` | `78 56 78 56 78 56 78 56` | każdy element 16-bitowy = `&5678h` |
+| `a.fill[v]` | `78 56 34 12 78 56 34 12` | wzór o długości typu zmiennej (4 B) |
+| `a.byte` = `FF`, potem `a.byte += 1` | `00 00 00 00 00 00 00 00` | każdy bajt zawija się osobno |
+
+Odczyt, gdy blok zawiera `78 56 34 12 00 00 00 00`:
+
+| Zapis | Wynik | Dlaczego |
+|---|---|---|
+| `x as unsigned_32 = a.byte[1]` | `&00000056h` | soczewka czyta 1 bajt, choć `x` ma 4 B |
+| `y as unsigned_32 = a.unsigned_16[0]` | `&00005678h` | soczewka czyta 2 bajty |
+| `z as unsigned_32 = a.unsigned_32.at[1]` | `&00123456h` | 4 bajty od bajtu 1: `56 34 12 00` |
+
+> **Dlaczego soczewka zawsze decyduje o szerokości?** Wcześniejsza wersja reguły pozwalała drugiej stronie wyznaczać szerokość: `x as int = ptr.byte[5]` czytało 4 bajty, a `suma = ptr.byte[5] + ptr.byte[6]` po jednym, więc dopisanie `+ 0` zmieniało wynik. Prototyp tłumacza pokazał też, że naturalne `blok.byte[i] = i` zapisywało 8 bajtów. Teraz `.byte` znaczy zawsze jeden bajt, także przy literałach, a nietypowy dostęp jest jawny dzięki `.at`.
 
 > Jak to działa w środku: [bemol-wnetrze.md, rozdział 3 (obliczanie pozycji w soczewkach)](bemol-wnetrze.md#3-soczewki-obliczanie-pozycji)
 

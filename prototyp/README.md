@@ -59,7 +59,7 @@ Tłumacz nigdy nie powinien kończyć się surowym śladem Pythona. Jeśli tak s
 | `przyklady/petle.bmol` | typowane liczniki `for`, licznik zadeklarowany przed pętlą, zamiana `as` |
 | `przyklady/menu.bmol` | interaktywne menu z `keyInput`: tekst i liczby z klawiatury, `.update`, `.fill`, zrzut |
 | `przyklady/wejscie.bmol` | `INPUT.read[bufor]`: czytanie wejścia porcjami (`wejscie < plik.txt`) |
-| `przyklady/zasady.bmol` | zasady arytmetyki i soczewek Z1–Z5: stół 64-bitowy, worek przy zapisie, `.at`, literały bit po bicie |
+| `przyklady/zasady.bmol` | zasady arytmetyki i soczewek Z1–Z5: stół 64-bitowy, worek przy zapisie, `.at`, literał dłuższy niż soczewka |
 | `przyklady/funkcje.bmol` | uprawnienia funkcji do bloku: `CONST`, bez znacznika, `REF` (zmiana rozmiaru, podmiana, `.release`) |
 | `przyklady/blad_*.bmol` | przykłady komunikatów błędów |
 
@@ -69,7 +69,7 @@ Tłumacz nigdy nie powinien kończyć się surowym śladem Pythona. Jeśli tak s
 - **deklaracje:** zmienne, `GLOBAL`, `CONST`, `STRUCT` (pola o pełnych bajtach), `ALIAS`, `blok as pointer.new[1024]` (deklaracja z przydziałem),
 - **bloki:** `.new`, `.update`, `.release`, `.clear`, `.fill`, `.size`, `.shares`, `.rangeError`,
 - **arytmetyka (sekcja 5, Z1–Z2):** działania na 64 bitach (`doublefloat`, gdy w działaniu jest ułamek), dopasowanie do typu zmiennej lub soczewki dopiero przy zapisie: `(a + b) / 2` dla bajtów 200 i 200 daje 200, `if a + b > 255` działa, `7.9 + 0.5` do `int` daje 8,
-- **soczewki (sekcja 10, Z3–Z5):** `ptr.<typ>[n]` czyta i pisze zawsze swoją szerokość, `ptr.<typ>.at[n]` (pozycja w bajtach), pola struktur `ptr.Color[n].G`, literały szesnastkowe i binarne zapisywane bit po bicie, liczba dziesiętna jako wzór `.fill` bez soczewki to błąd,
+- **soczewki (sekcja 10, Z3–Z5):** `ptr.<typ>[n]` czyta i pisze zawsze swoją szerokość, `ptr.<typ>.at[n]` (pozycja w bajtach), pola struktur `ptr.Color[n].G`, literał dłuższy niż soczewka zawija się z ostrzeżeniem BML-W0120, liczba dziesiętna jako wzór `.fill` bez soczewki to błąd,
 - **operacje blokowe:** `ptr.byte += 1`, `ptr.float = 1.5`, `ptr.byte = saturate(ptr.byte + 60)`, także `xor=`, `shl=` itd.,
 - **widoki i kopie:** `viewPortion`, `viewRectangle`, `copy`, `copyPortion`, `copyRectangle`, przypisanie widoku do widoku (kopia danych),
 - **liczniki:** `.shares` i liczba widoków, zwalnianie bloku na końcu zasięgu, zakaz `.release` bloku z aktywnymi widokami,
@@ -111,7 +111,7 @@ Zrzut widoku, wiersz po wierszu:
 
 **`wejscie.bmol`**: dla pliku 1017 B i 33 linii wypisuje dokładnie te liczby (zgodne z `wc`).
 
-**`zasady.bmol`**: średnia bajtów 200 i 200 = 200, `a + b` do `byte` = 144, `a + b > 255` prawdziwe, `7.9 + 0.5` do `int` = 8, `7 / 2 + 0.5` = 4, `x as int = blok.byte[5]` czyta 1 bajt, `blok.byte[2] = 300` zapisuje 44 bez ruszania sąsiada, `.at` zapisuje i czyta `unsigned_16` i `doublefloat` od dowolnego bajtu, `&0000000b` zmienia 7 bitów.
+**`zasady.bmol`**: średnia bajtów 200 i 200 = 200, `a + b` do `byte` = 144, `a + b > 255` prawdziwe, `7.9 + 0.5` do `int` = 8, `7 / 2 + 0.5` = 4, `x as int = blok.byte[5]` czyta 1 bajt, `blok.byte[2] = 300` zapisuje 44 bez ruszania sąsiada, `.at` zapisuje i czyta `unsigned_16` i `doublefloat` od dowolnego bajtu, `a.byte[0] = &1234h` zapisuje `34` z ostrzeżeniem.
 
 **`funkcje.bmol`**: `CONST` tylko czyta, funkcja bez znacznika zmienia dane, `REF` zmienia rozmiar, podmienia blok (stary blok traci jedno `shares`) i go zwalnia.
 
