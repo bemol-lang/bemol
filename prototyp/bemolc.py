@@ -223,6 +223,7 @@ class Node:
 class Parser:
     def __init__(self, toks):
         self.t, self.p = toks, 0
+        self.accepted = set()                       # linie z @ACCEPT WARNING
 
     def peek(self, k=0):
         return self.t[min(self.p + k, len(self.t) - 1)]
@@ -253,9 +254,20 @@ class Parser:
             self.next()
 
     def end_of_stmt(self):
-        if self.at('OP', '@'):                      # @ACCEPT ... do końca instrukcji
-            while not self.at('NL') and not self.at('EOF'):
-                self.next()
+        if self.at('OP', '@'):                      # @ACCEPT WARNING na końcu instrukcji (sekcja 20)
+            at = self.next()
+            name = self.expect('NAME', what='nazwa znacznika')
+            if name.val != 'ACCEPT':
+                raise BemolError('BML-E0026', f'„@{name.val}” nie może stać na końcu instrukcji', name.line, at.col,
+                                 help='na końcu instrukcji stoi tylko @ACCEPT WARNING')
+            kind = self.peek()
+            if kind.kind == 'NAME' and kind.val == 'RUNTIME_ERROR':
+                unsupported('@ACCEPT RUNTIME_ERROR', kind.line)
+            if not (kind.kind == 'NAME' and kind.val == 'WARNING'):
+                raise BemolError('BML-E0027', '@ACCEPT wymaga słowa WARNING', kind.line, kind.col,
+                                 help='@ACCEPT WARNING   # dlaczego to zamierzone')
+            self.next()
+            self.accepted.add(at.line)
         if not self.at('EOF'):
             self.expect('NL', what='koniec instrukcji')
 
@@ -490,7 +502,46 @@ class Parser:
             self.end_of_stmt()
             return Node('Return', tok.line, col=tok.col, value=val)
         if v == 'switch':
-            unsupported('switch', tok.line)
+            self.next()
+            subj = self.expr()
+            self.end_of_stmt()
+            self.skip_nl()
+            cases = []
+            while not self.at_closer('switch'):
+                ct = self.peek()
+                if self.at('NAME', 'else'):
+                    raise BemolError('BML-E0230', 'w switch nie ma else', ct.line, ct.col,
+                                     detail='wartości, których nie złapał żaden case, obsługuje gałąź @ANYTHING_ELSE',
+                                     help='case @ANYTHING_ELSE')
+                if self.at('EOF'):
+                    raise BemolError('BML-E0024', 'brak zamknięcia bloku przed końcem pliku', ct.line)
+                if not self.accept('NAME', 'case'):
+                    raise BemolError('BML-E0231', 'w switch po wartości stoją gałęzie case', ct.line, ct.col,
+                                     help='case 1, 2\n    ...\ncase @ANYTHING_ELSE')
+                items, anything = [], False
+                while True:
+                    if self.at('OP', '@'):
+                        at = self.next()
+                        nm = self.expect('NAME')
+                        if nm.val != 'ANYTHING_ELSE':
+                            raise BemolError('BML-E0232', f'„@{nm.val}” nie jest wartością case', nm.line, at.col,
+                                             help='gałąź „wszystko inne”: @ANYTHING_ELSE')
+                        if anything:
+                            raise BemolError('BML-E0233', '@ANYTHING_ELSE dwa razy w jednym case', nm.line, at.col)
+                        anything = True
+                    else:
+                        a = self.expr()
+                        if self.accept('NAME', 'to'):
+                            items.append(('range', a, self.expr()))
+                        else:
+                            items.append(('val', a, None))
+                    if not self.accept('OP', ','):
+                        break
+                self.end_of_stmt()
+                body = self.block(lambda: self.at_closer('switch') or self.at('NAME', 'case') or self.at('NAME', 'else'))
+                cases.append(Node('Case', ct.line, col=ct.col, items=items, anything=anything, body=body))
+            self.eat_closer('switch')
+            return Node('Switch', tok.line, col=tok.col, subj=subj, cases=cases)
         if v == 'keyInput':
             self.next()
             self.expect('OP', '(')
@@ -1809,6 +1860,123 @@ class Gen:
         if existing is None:
             self.gone[s.var] = s.line
 
+    def const_eval(self, node):
+        """Wartość wyrażenia znana podczas kompilacji (literały, CONST, proste działania) albo None."""
+        k = node.kind
+        if k in ('Num', 'Lit', 'Flt'):
+            return node.v
+        if k == 'Name' and node.name in self.consts:
+            return self.consts[node.name].get('v')
+        if k == 'Un' and node.op == '-':
+            v = self.const_eval(node.e)
+            return None if v is None else -v
+        if k == 'Bin' and node.op in ('+', '-', '*', '/', '%', 'shl', 'shr', 'and', 'or', 'xor'):
+            a, b = self.const_eval(node.l), self.const_eval(node.r)
+            if a is None or b is None:
+                return None
+            try:
+                return {'+': lambda: a + b, '-': lambda: a - b, '*': lambda: a * b,
+                        '/': lambda: a // b if isinstance(a, int) and isinstance(b, int) else a / b,
+                        '%': lambda: a % b, 'shl': lambda: a << b, 'shr': lambda: a >> b,
+                        'and': lambda: a & b, 'or': lambda: a | b, 'xor': lambda: a ^ b}[node.op]()
+            except (ZeroDivisionError, TypeError):
+                return None
+        return None
+
+    def case_value(self, node):
+        v = self.const_eval(node)
+        if v is None:
+            self.err('BML-E0234', 'wartość w case musi być stała (literał albo CONST)', node.line,
+                     col=getattr(node, 'col', 0),
+                     detail='kompilator przypisuje każdą wartość do gałęzi podczas kompilacji (tablica skoków)',
+                     help='dla wartości znanych dopiero w działaniu programu użyj if ... elseif')
+        if not isinstance(v, int):
+            self.err('BML-E0235', 'switch działa tylko na liczbach całkowitych', node.line, col=getattr(node, 'col', 0),
+                     help='porównanie liczb zmiennoprzecinkowych na równość jest zawodne: użyj if z zakresem')
+        return v
+
+    def st_Switch(self, s):
+        c, t = self.expr(s.subj)
+        if self.is_float(t) or t in BLOCK_TYPES or t in self.structs:
+            self.err('BML-E0235', 'switch działa tylko na liczbach całkowitych, bit i wartościach ENUM', s.line,
+                     help='dla innych wartości użyj if ... elseif')
+        anything_idx = None
+        intervals = []                      # (od, do, numer gałęzi, linia)
+        conds = []
+        for i, cs in enumerate(s.cases):
+            self.line = cs.line
+            if cs.anything:
+                if anything_idx is not None:
+                    self.err('BML-E0236', '@ANYTHING_ELSE może być w switch tylko raz', cs.line,
+                             detail=f'pierwsze @ANYTHING_ELSE stoi w linii {s.cases[anything_idx].line}',
+                             help='dwie gałęzie „wszystko inne” miałyby ten sam warunek: zostaw jedną')
+                anything_idx = i
+            mine = []
+            for kind, a, b in cs.items:
+                lo = self.case_value(a)
+                hi = self.case_value(b) if kind == 'range' else lo
+                if lo > hi:
+                    self.err('BML-E0237', f'zakres {lo} to {hi} jest pusty', a.line, help=f'case {hi} to {lo}')
+                mine.append((lo, hi))
+            # nakładanie się z wcześniejszymi gałęziami: pierwsza pasująca wygrywa
+            if mine:
+                left = []
+                for lo, hi in mine:
+                    parts = [(lo, hi)]
+                    for plo, phi, pj, pline in intervals:
+                        nxt = []
+                        for a1, b1 in parts:
+                            if phi < a1 or plo > b1:
+                                nxt.append((a1, b1))
+                                continue
+                            if a1 < plo:
+                                nxt.append((a1, plo - 1))
+                            if b1 > phi:
+                                nxt.append((phi + 1, b1))
+                        parts = nxt
+                    left.extend(parts)
+                overl = [(plo, phi, pline) for lo, hi in mine for plo, phi, pj, pline in intervals
+                         if not (phi < lo or plo > hi)]
+                self.line, self.col = cs.line, cs.col
+                if not left and not cs.anything:
+                    self.warn('BML-W0311', f'gałąź case z linii {cs.line} nigdy się nie wykona', cs.line,
+                              f'wszystkie jej wartości obsługują wcześniejsze gałęzie (linia {overl[0][2]}); pierwsza pasująca gałąź wygrywa',
+                              'przenieś tę gałąź wyżej albo usuń ją')
+                elif overl:
+                    # szczególny przypadek przed ogólnym: ostrzeżenie przy gałęzi szczególnej (wyżej),
+                    # bo tam zapada decyzja „te wartości obsługuję osobno” (sekcja 20, @ACCEPT)
+                    lo, hi, pline = overl[0]
+                    pcol = next(c.col for c in s.cases if c.line == pline)
+                    self.line, self.col = pline, pcol
+                    vals = f'{lo}' if lo == hi else f'{lo}...{hi}'
+                    self.warn('BML-W0310', f'wartość {vals} należy też do case z linii {cs.line}', pline,
+                              f'wykona się ta gałąź (linia {pline}), bo pierwsza pasująca gałąź wygrywa',
+                              'jeśli to zamierzony szczególny przypadek przed ogólnym: @ACCEPT WARNING przy tej gałęzi')
+            for lo, hi in mine:
+                intervals.append((lo, hi, i, cs.line))
+            conds.append(mine)
+        ct = self.tct(t)
+        sw, br = self.tmp('_sw'), self.tmp('_br')
+        self.emit(f'{{ {ct} {sw} = ({ct})({c}); int {br} = -1;')
+        first = True
+        for i, mine in enumerate(conds):
+            if not mine:
+                continue
+            parts = [f'{sw} == {cnum(lo) if ct != "uint64_t" else str(lo) + "ULL"}' if lo == hi else
+                     f'({sw} >= {lo}LL && {sw} <= {hi}LL)' for lo, hi in mine]
+            self.emit(f'  {"if" if first else "else if"} ({" || ".join(parts)}) {br} = {i};')
+            first = False
+        if anything_idx is not None:
+            self.emit(f'  {"" if first else "else "}{br} = {anything_idx};' if first else f'  else {br} = {anything_idx};')
+        first = True
+        for i, cs in enumerate(s.cases):
+            self.emit(f'{"if" if first else "} else if"} ({br} == {i}) {{')
+            first = False
+            self.ind += 1; self.push(); self.stmts(cs.body); self.pop(); self.ind -= 1
+        if s.cases:
+            self.emit('}')
+        self.emit('}')
+
     def st_While(self, s):
         self.temps = []
         c = self.cond(s.cond)
@@ -2060,7 +2228,7 @@ class Gen:
                 c = cident(it.name, 'c_')
                 v = self.value_for(it.type, it.value)
                 self.emit(f'static const {self.ctype(it.type)} {c} = {v};')
-                self.consts[it.name] = {'c': c, 'type': it.type}
+                self.consts[it.name] = {'c': c, 'type': it.type, 'v': self.const_eval(it.value)}
         ginits = []
         for it in self.items:
             if it.kind == 'Decl':
@@ -2230,14 +2398,22 @@ def main(argv):
         src = fh.read()
     lines = src.split('\n')
     try:
-        items = Parser(lex(src)).program()
+        parser = Parser(lex(src))
+        items = parser.program()
         gen = Gen(items, path, finalbake)
         csrc = gen.generate()
     except BemolError as e:
         show('błąd', e.code, e.msg, lines, path, e.line, e.col, e.detail, e.help)
         return 1
+    warned = set()
     for code, msg, line, detail, hlp, col in gen.warnings:
+        warned.add(line)
+        if line in parser.accepted:                  # @ACCEPT WARNING przy tej instrukcji
+            continue
         show('ostrzeżenie', code, msg, lines, path, line, col, detail, hlp)
+    for line in sorted(parser.accepted - warned):
+        show('ostrzeżenie', 'BML-W0002', 'zbędne @ACCEPT WARNING: ta instrukcja nie ma ostrzeżenia', lines, path, line, 0,
+             '', 'usuń @ACCEPT WARNING z tej linii')
     if check:
         if not DIAG_JSON:
             print(f'sprawdzono: {os.path.basename(path)}, bez błędów')
@@ -2262,6 +2438,11 @@ def main(argv):
         r = subprocess.run(cmd, capture_output=True, text=True)
     except OSError as e:
         show_plain('błąd', 'BML-E0998', f'nie udało się uruchomić kompilatora C ({compiler})', detail=str(e), help=INSTALL_HELP)
+        return 1
+    if r.returncode != 0 and any(k in r.stderr for k in ('Permission denied', 'cannot open output file', 'Text file busy')):
+        show_plain('błąd', 'BML-E0994', f'nie można zapisać programu {os.path.basename(exe)}: jest nadal uruchomiony',
+                   detail='Windows nie pozwala nadpisać pliku programu, który właśnie działa',
+                   help='zamknij program (w VS Code: kosz przy terminalu z programem) i skompiluj ponownie')
         return 1
     if r.returncode != 0:
         show_plain('błąd', 'BML-E0999', 'kompilator C zgłosił błąd w wygenerowanym kodzie',

@@ -76,6 +76,7 @@ Tłumacz nigdy nie powinien kończyć się surowym śladem Pythona. Jeśli tak s
 | `przyklady/menu.bmol` | interaktywne menu z `keyInput`: tekst i liczby z klawiatury, `.update`, `.fill`, zrzut |
 | `przyklady/wejscie.bmol` | `INPUT.read[bufor]`: czytanie wejścia porcjami (`wejscie < plik.txt`) |
 | `przyklady/zasady.bmol` | zasady arytmetyki i soczewek Z1–Z5: stół 64-bitowy, worek przy zapisie, `.at`, literał dłuższy niż soczewka |
+| `przyklady/wybor.bmol` | `switch` / `case`: listy, zakresy, `CONST`, `@ANYTHING_ELSE`, `@ACCEPT WARNING`, `break` w gałęzi |
 | `przyklady/funkcje.bmol` | uprawnienia funkcji do bloku: `CONST`, bez znacznika, `REF` (zmiana rozmiaru, podmiana, `.release`) |
 | `przyklady/blad_*.bmol` | przykłady komunikatów błędów |
 
@@ -90,6 +91,8 @@ Tłumacz nigdy nie powinien kończyć się surowym śladem Pythona. Jeśli tak s
 - **widoki i kopie:** `viewPortion`, `viewRectangle`, `copy`, `copyPortion`, `copyRectangle`, przypisanie widoku do widoku (kopia danych),
 - **liczniki:** `.shares` i liczba widoków, zwalnianie bloku na końcu zasięgu, zakaz `.release` bloku z aktywnymi widokami,
 - **sterowanie:** `if`/`elseif`/`else`, `while`, `repeat...until`, `break`, `continue`, separator `;`,
+- **`switch` / `case`:** kilka wartości po przecinku, zakresy `to`, stałe `CONST`, `@ANYTHING_ELSE` (samo albo na liście, tylko raz), pierwsza pasująca gałąź wygrywa, ostrzeżenia o szczególnym przypadku przed ogólnym (W0310) i o martwej gałęzi (W0311), błąd przy `else` w `switch`; `break` w gałęzi przerywa pętlę,
+- **`@ACCEPT WARNING`** na końcu instrukcji ukrywa jej ostrzeżenia; zbędne `@ACCEPT` daje ostrzeżenie W0002,
 - **`for` z typowanym licznikiem:** `for i as int = 0 to 99 [step s] do` (nowa zmienna pętli, znika po `for.end`) albo `for i = ...` dla zmiennej zadeklarowanej wcześniej (zostaje w niej ostatnia wartość); wewnętrzny licznik 64-bitowy, zakres sprawdzany raz przed pętlą (dla literałów już przy kompilacji), krok 0 to błąd,
 - **`foreach px, nr as int in blok.T`** (numer elementu z jawnym typem),
 - **zamiana `as`:** `wartosc as byte` (najmłodsza część), `x as int` (ułamek odcięty), `as bit`; wiąże mocniej niż `+` i `*`,
@@ -101,7 +104,7 @@ Tłumacz nigdy nie powinien kończyć się surowym śladem Pythona. Jeśli tak s
 
 ## Czego jeszcze nie ma
 
-`switch`, `ENUM`, klasy, `PERSISTENT`, `.map`, `.value` (cały blok jako liczba), typy o nietypowej szerokości (`unsigned_12`) i pola bitowe w strukturach, `halffloat`, wzory pamięci, `@ACCEPT` (jest pomijane), zwracanie kilku wartości, `ARGS`, praca równoległa.
+`ENUM`, klasy, `PERSISTENT`, `.map`, `.value` (cały blok jako liczba), typy o nietypowej szerokości (`unsigned_12`) i pola bitowe w strukturach, `halffloat`, wzory pamięci, `@ACCEPT RUNTIME_ERROR`, zwracanie kilku wartości, `ARGS`, praca równoległa.
 Użycie któregokolwiek z nich daje czytelny błąd **BML-E0900** zamiast złego tłumaczenia.
 
 Optymalizacje z rozdziału 9 dokumentu o wnętrzu (adres raz przed pętlą, sprawdzanie zakresu raz przed pętlą) **nie są jeszcze zrobione**: każdy dostęp przechodzi przez menedżer. Pomiary szybkości mają sens dopiero w następnej wersji.

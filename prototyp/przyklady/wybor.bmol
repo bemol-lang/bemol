@@ -1,0 +1,56 @@
+# switch / case z @ANYTHING_ELSE (specyfikacja, sekcja 4)
+
+CONST NIEBIESKI as int = 2
+
+FUNCTION nazwa(kanal as int): int
+    wynik as int = 0
+    switch kanal
+        case 0
+            wynik = 100                     # czerwony
+        case 1, NIEBIESKI
+            wynik = 200                     # zielony lub niebieski
+        case 10 to 20, @ANYTHING_ELSE
+            wynik = 300                     # zakres 10...20 i wszystko inne
+        case 30
+            wynik = 400                     # specjalny (ważniejszy niż @ANYTHING_ELSE)
+    switch.end
+    return wynik
+nazwa.end
+
+MAIN BEGIN
+    println("0 → ", nazwa(0), "   1 → ", nazwa(1), "   15 → ", nazwa(15), "   99 → ", nazwa(99), "   -5 → ", nazwa(-5))
+    println("    (oczekiwane: 100, 200, 300, 300, 300)")
+    println("30 → ", nazwa(30), "   (oczekiwane 400: case 30 wygrywa z @ANYTHING_ELSE)")
+    println("2 → ", nazwa(2), "    (oczekiwane 200: CONST NIEBIESKI)")
+
+    # bez @ANYTHING_ELSE: nic nie pasuje, nic się nie dzieje
+    x as int = 7
+    trafienie as int = 0
+    switch x
+        case 1 to 5
+            trafienie = 1
+    switch.end
+    println("7 bez @ANYTHING_ELSE → ", trafienie, "   (oczekiwane 0)")
+
+    # szczególny przypadek przed ogólnym: potwierdzone @ACCEPT WARNING
+    for v as int = 4 to 6 do
+        switch v
+            case 5 @ACCEPT WARNING          # 5 ma osobną obsługę
+                print("piątka ")
+            case 1 to 10
+                print(v, " ")
+        switch.end
+    for.end
+    println("   (oczekiwane: 4 piątka 6)")
+
+    # break w gałęzi case przerywa pętlę (switch nie ma break)
+    for n as int = 1 to 10 do
+        switch n
+            case 4
+                break
+            case @ANYTHING_ELSE
+                print(n, " ")
+        switch.end
+    for.end
+    println("   (oczekiwane: 1 2 3)")
+MAIN END

@@ -638,8 +638,8 @@ switch.end
 
 **Nakładające się wartości: pierwsza pasująca gałąź wygrywa** (kolejność od góry do dołu). Kompilator i tak przypisuje każdą wartość do gałęzi podczas kompilacji, więc nie kosztuje to nic. Ostrzeżenia:
 
-- **szczególny przypadek przed ogólnym** (`case 5`, potem `case 1 to 10`): ostrzeżenie informacyjne, że 5 należy do obu gałęzi i wykona się pierwsza. Często to celowy wzorzec,
-- **gałąź martwa** (`case 1 to 10`, potem `case 5`): mocniejsze ostrzeżenie, że `case 5` nigdy się nie wykona. Prawie zawsze to pomyłka.
+- **szczególny przypadek przed ogólnym** (`case 5`, potem `case 1 to 10`): ostrzeżenie informacyjne **przy gałęzi szczególnej** (`case 5`), że 5 należy do obu gałęzi i wykona się pierwsza. Często to celowy wzorzec; wtedy `case 5 @ACCEPT WARNING`, bo właśnie tam zapada decyzja „5 obsługuję osobno”,
+- **gałąź martwa** (`case 1 to 10`, potem `case 5`): mocniejsze ostrzeżenie **przy gałęzi martwej** (`case 5`), że nigdy się nie wykona. Prawie zawsze to pomyłka.
 
 **Kompletność przy `ENUM`:** gdy `switch` na wyliczeniu nie obsługuje wszystkich wartości i nie ma `@ANYTHING_ELSE`, kompilator ostrzega: „brak obsługi wartości GORACO”. Po dodaniu nowej wartości do wyliczenia kompilator wskaże wszystkie miejsca do uzupełnienia.
 
