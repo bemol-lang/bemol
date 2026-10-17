@@ -150,6 +150,10 @@ pozycja w bajtach = n × rozmiar typu
 
 Rozmiar typu jest stałą znaną podczas kompilacji, więc to jedno mnożenie (często zamieniane na przesunięcia bitowe).
 
+**Pozycja w bajtach: `.at[n]`.** Przy `ptr.doublefloat.at[1009]` mnożenia nie ma: pozycja to po prostu bajt 1009, a soczewka wyznacza tylko szerokość (8 bajtów). Wartość może zaczynać się w dowolnym bajcie, a nowoczesne procesory x86 i ARM czytają ją jedną instrukcją, nawet gdy nie leży na granicy swojego rozmiaru.
+
+**Szerokość zawsze z soczewki.** Odczyt `ptr.byte[n]` to zawsze 1 bajt, rozszerzony do 64-bitowego rejestru (instrukcja `movzx` na x86). Zapis do `ptr.byte[n]` to zawsze najmłodszy bajt rejestru. Kompilator nie musi patrzeć na drugą stronę przypisania, żeby ustalić, ile bajtów przeczytać.
+
 ### Soczewki bitowe (`.bit`, `unsigned_N`, `signed_N`)
 
 Dla soczewki o szerokości N bitów:

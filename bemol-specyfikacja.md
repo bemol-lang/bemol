@@ -47,6 +47,16 @@ BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. D
 
 ## 1. Filozofia
 
+### Trzy cele BEMOL-a
+
+Każda decyzja w języku jest sprawdzana względem trzech celów. Reguła, która psuje któryś z nich, wymaga ponownego przemyślenia.
+
+1. **Jasność i przewidywalność kodu.** Wynik da się przewidzieć z samego zapisu, bez znajomości wyjątków i bez zaglądania w inne miejsca programu.
+2. **Szybkie, proste i skuteczne zarządzanie pamięcią.** Blok jest zwalniany dokładnie w miejscu widocznym w kodzie (koniec zasięgu, ostatnie przypisanie, `.release`), bez *garbage collectora* i jego nieprzewidywalnych przerw w działaniu programu.
+3. **Operacje na wielkich blokach danych.** Soczewki, widoki bez kopiowania, operacje na całym bloku zamieniane na instrukcje wektorowe procesora i pliki większe niż pamięć RAM.
+
+### Zasady
+
 **Wszystko jest blokiem pamięci.** Blok sam w sobie nie ma typu. Typ to **soczewka**, przez którą patrzymy na fragment bloku. Ten sam blok można w jednym programie czytać bajtami, liczbami, strukturami czy bitami.
 
 **Każda operacja działa w ramach soczewki.** Przesunięcia bitów, operacje logiczne, arytmetyka, wypełnianie: zawsze dotyczą elementu, który wyznacza soczewka. `.byte` to każdy bajt osobno, `.value` to cały blok jako jedna liczba.
@@ -55,7 +65,7 @@ BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. D
 
 **Czytelnie dla człowieka, szybko dla maszyny.** Nazwy mówią wprost, co robią: wszystko, co kopiuje dane, zaczyna się od `copy`, a wszystko, co tylko pokazuje dane bez kopiowania, od `view`.
 
-**Programista wie, co robi.** Programista BEMOL-a zna sposób zapisu danych w komputerze (wie, że 300 nie mieści się w bajcie) i ponosi za niego odpowiedzialność. Język mu niczego nie zabrania.
+**Programista wie, co robi.** Programista BEMOL-a zna sposób zapisu danych w komputerze (wie, że 300 nie mieści się w bajcie) i ponosi za niego odpowiedzialność. Język nie zabrania mu dostępu do żadnego bajtu ani bitu; zabrania tylko zapisów niejednoznacznych, które łatwo przeczytać inaczej, niż działają (np. `=` w warunku).
 
 **Kompilator wykonuje to, co programista napisał.** Kompilator optymalizuje tylko własną maszynerię (odczyt adresów, liczniki, kontrolę zakresu) i sposób wykonania (rejestry, instrukcje wektorowe, wyliczanie stałych), **nigdy nie pomija operacji programisty**. Jeśli programista napisał `.clear` tuż przed `.release`, blok zostanie wyzerowany.
 
@@ -443,7 +453,7 @@ MAIN END
 
 > **Dlaczego przypisanie nie może stać w warunku?** W C zapis `if (x = 5)` jest poprawny: przypisuje 5 i zawsze jest prawdziwy. To jeden z najsłynniejszych błędów w historii programowania. W BEMOL-u nie da się go popełnić.
 
-**Wynik porównania ma typ `bit`** (0 lub 1). Szerokość porównywanych wartości wyznaczają te same reguły co wszędzie (sekcja 10).
+**Wynik porównania ma typ `bit`** (0 lub 1). Porównywane wartości są liczone na 64 bitach (sekcja 5, zasada Z1), więc np. `if a + b > 255 then` działa także dla bajtów.
 
 ### Operatory logiczne
 
@@ -516,7 +526,7 @@ for.end
 println("pierwsze zero na pozycji ", i)
 ```
 
-**Jawny typ licznika czyni regułę szerokości przewidywalną.** `blok.byte[i] = i` zapisuje tyle bajtów, ile ma typ `i` (sekcja 10): przy `i as byte` jeden bajt, przy `i as int` cztery. Gdy licznik musi być szerszy niż zapisywana wartość, wartość zamienia się jawnie: `blok.byte[i] = i as byte` (sekcja 5).
+**Zapis licznika przez soczewkę:** `blok.byte[i] = i` zapisuje zawsze 1 bajt, czyli najmłodszy bajt licznika, bez względu na typ `i`. Soczewka pisze swoją szerokość (sekcja 10, zasada Z3).
 
 **Ochrona przed pętlą bez końca.** Pętla `for j as byte = 0 to 255` w języku z zawijaniem liczb (jak C) nigdy by się nie skończyła: po 255 licznik wraca do 0, więc warunek „j ≤ 255” jest zawsze prawdziwy. W BEMOL-u kompilator liczy obroty wewnętrznie w szerokim liczniku, a zmienna `j` dostaje w każdym obrocie jego wartość. Pętla zawsze się kończy. Gdy początek lub koniec nie mieści się w typie licznika (`for j as byte = 0 to 300`), to błąd kompilacji, a przy wartościach znanych dopiero w działaniu programu jedno sprawdzenie przed startem pętli.
 
@@ -535,7 +545,7 @@ for.end
 
 Zapis `for x as doublefloat = 0 to 1 step 0.01` to błąd kompilacji z podpowiedzią, jak go przepisać.
 
-> **Dlaczego typ licznika musi być jawny?** Prototyp tłumacza pokazał, że przy domyślnym typie licznika (`longint`, 8 bajtów) najbardziej naturalna linia `blok.byte[i] = i` zapisuje 8 bajtów zamiast jednego i wychodzi poza blok. Typ widoczny w nagłówku pętli sprawia, że konsekwencje reguły szerokości są oczywiste w miejscu, gdzie powstaje licznik.
+> **Dlaczego typ licznika musi być jawny?** Licznik to zwykła zmienna, a w BEMOL-u każda zmienna ma jawny typ. Typ w nagłówku pętli mówi od razu, jaki zakres licznik obejmie (kompilator sprawdza go przed startem pętli), a deklaracja w pętli lub przed nią mówi, czy licznik przetrwa `for.end`.
 
 ### Pętla `while`: warunek na początku
 
@@ -707,34 +717,34 @@ img.new[1920*1080*Color]     # struktury też mają rozmiar
 
 Do oszczędnego przechowywania wielu flag służy blok i soczewka `.bit`: `flagi.new[1000*bit]` zajmuje 125 bajtów.
 
-### Arytmetyka zmiennych statycznych
+### Arytmetyka: dwie zasady
 
-**Obliczenie odbywa się w typie zmiennej docelowej.** Składniki są najpierw rozszerzane do jej typu:
+**Z1. Liczymy na dużym stole: 64 bity.** Każde działanie na liczbach całkowitych odbywa się na 64 bitach (`longint`; gdy w działaniu bierze udział `unsigned_64`, na 64 bitach bez znaku). Gdy w działaniu jest choć jedna liczba zmiennoprzecinkowa, całe działanie liczone jest w `doublefloat`. Określa to język, a nie procesor: na procesorze 32-bitowym kompilator liczy parami rejestrów (wolniej), ale wynik jest identyczny.
 
-```
-suma as int
-suma = ptr.byte[5] + ptr.byte[6]     # 200 + 200 = 400, mieści się w int
-```
-
-Gdy nie ma zmiennej docelowej (warunek, porównanie), obliczenie odbywa się w najszerszym typie składników.
-
-**Przepełnienie nie jest sprawdzane: wartość się zawija i zostaje tyle, ile się mieści.** To zachowanie zdefiniowane i przewidywalne, a nie błąd:
+**Z2. Worek decyduje przy wrzucaniu.** Wynik jest dopasowywany do typu zmiennej lub soczewki dopiero przy zapisie: liczba całkowita **zawija się** (zostaje tyle najmłodszych bitów, ile mieści typ), a ułamek jest **odcinany** (sekcja „Zamiana float na typ całkowity”). Z `saturate( )` wynik zatrzymuje się na suficie lub podłodze typu zamiast się zawijać.
 
 ```
-maly as byte
-maly = 200 + 200              # 400 → zostaje 144
+a, b as byte = 200
+
+suma as int = a + b                  # 400
+maly as byte = a + b                 # 400 → zawija się do 144
+srednia as byte = (a + b) / 2        # 400 / 2 = 200: po drodze nic się nie zawija
+if a + b > 255 then                  # prawda: porównanie na stole
+wynik as int = 7.9 + 0.5             # 8.4 → 8 (ułamek odcięty dopiero przy zapisie)
 
 duzy as int
-duzy = 2147483647 + 1         # → -2147483648
+duzy = 2147483647 + 1                # → -2147483648
 ```
 
-Programista zna pojemność swoich zmiennych, więc świadome przepełnienie jest jego decyzją. Brak sprawdzania oznacza zero kosztu przy każdym działaniu. Dla typów zmiennoprzecinkowych przepełnienie daje nieskończoność, zgodnie ze standardem procesora.
+**Przepełnienie worka nie jest błędem**, tylko zachowaniem zdefiniowanym i przewidywalnym. Programista zna pojemność swoich zmiennych, więc świadome zawinięcie jest jego decyzją. Brak sprawdzania oznacza zero kosztu przy każdym działaniu. Dla typów zmiennoprzecinkowych przepełnienie daje nieskończoność, zgodnie ze standardem procesora. Przepełnienie samego stołu (wynik pośredni poza 64 bitami) również się zawija.
+
+> **Dlaczego stół ma 64 bity, a nie rozmiar worka?** Tak liczy procesor: rejestry mają 64 bity, a bajty są do nich rozszerzane przed działaniem. Liczenie „w worku” wymagałoby dokładania po każdym kroku instrukcji obcinających, czyli byłoby wolniejsze i dawało zaskakujące wyniki: średnia pikseli 200 i 200 wychodziłaby 72. Tam, gdzie wynik jest identyczny (`+`, `-`, `*`, operacje bitowe i przesunięcie w lewo), kompilator liczy w wąskim typie, więc operacje blokowe na bajtach nadal korzystają z instrukcji wektorowych przetwarzających 32 bajty naraz.
 
 **`.rangeError` nie dotyczy zmiennych statycznych**, tylko bloków (sekcja 19).
 
 ### Nasycenie: `saturate( )`
 
-Gdy programista nie chce zawijania, może jawnie użyć `saturate( )`. Zamiast „przekręcić” wartość na drugą stronę, nasycenie zatrzymuje ją na **suficie** albo **podłodze** zakresu. **`saturate` nasyca w granicach soczewki** (albo typu zmiennej docelowej): soczewka wyznacza pozycję i zakres wartości, a `saturate` nie pozwala z tego zakresu wyjść.
+Gdy programista nie chce zawijania, może jawnie użyć `saturate( )`. Zamiast „przekręcić” wartość na drugą stronę, nasycenie zatrzymuje ją na **suficie** albo **podłodze** zakresu. **`saturate` nasyca w granicach worka**, czyli typu zmiennej albo soczewki, do której trafia wynik. Gdy worka nie ma (porównanie), nasyca w granicach najszerszego typu składników.
 
 | Typ | Podłoga | Sufit |
 |---|---|---|
@@ -765,15 +775,11 @@ Procesory mają gotowe instrukcje wektorowe nasycenia dla bajtów i liczb 16-bit
 i as int = 300                       # &012Ch
 b as byte = i as byte                # &2Ch = 44 (najmłodszy bajt)
 
-for i as int = 0 to 999 do
-    blok.byte[i] = i as byte         # zapis 1 bajtu: wartość ma typ byte (reguła szerokości, sekcja 10)
-for.end
-
 x = (a + b) as byte                  # zamiana całej sumy
 y = a + b as byte                    # zamiana tylko b: as wiąże mocniej niż + i *
 ```
 
-`as` to to samo słowo, które w deklaracjach znaczy „jako typ” (`i as int`), więc ma jedno znaczenie w dwóch miejscach.
+`as` przydaje się w środku wyrażenia, gdy wartość pośrednia ma być zawinięta wcześniej niż przy zapisie do worka (np. suma kontrolna liczona na 8 bitach). To to samo słowo, które w deklaracjach znaczy „jako typ” (`i as int`), więc ma jedno znaczenie w dwóch miejscach.
 
 > **Dlaczego nie `(byte) i` jak w C?** W BEMOL-u nazwa typu w wyrażeniu oznacza jego rozmiar (`new[100*Color]`). Zapis z nawiasami byłby dwuznaczny: `(Color) - 1` to zamiana liczby -1 na typ `Color` czy rozmiar `Color` minus 1? C rozwiązuje podobne dwuznaczności regułami, które zna niewielu programistów. `as` stoi po wartości, więc dwuznaczności nie ma.
 
@@ -787,7 +793,7 @@ wynik = 3.7       # 3
 wynik = -3.7      # -3
 ```
 
-Gdy część całkowita jest za duża dla typu, zostaje tyle, ile się mieści.
+Gdy część całkowita jest za duża dla typu, zostaje tyle, ile się mieści. Ułamek jest odcinany dopiero przy zapisie do worka (Z2), więc `wynik = 7.9 + 0.5` daje 8.
 
 ### Wyliczenia: `ENUM`
 
@@ -797,7 +803,7 @@ ENUM Kanal as byte { R = 0, G = 1, B = 2, A = 3 }     # jawny typ i wartości
 ```
 
 - **wartości** domyślnie rosną od 0, ale można je podać jawnie (przydatne przy formatach plików),
-- **typ** można podać jawnie (`as byte`). Bez tego kompilator wybiera najmniejszy typ bez znaku, w którym mieszczą się wszystkie wartości, zgodnie z regułą dla literałów dziesiętnych. Wyliczenie ma więc szerokość i działa też jako soczewka: `ptr.Kanal[5]`,
+- **typ** można podać jawnie (`as byte`). Bez tego kompilator wybiera najmniejszy typ bez znaku (`byte`, `unsigned_16`, ...), w którym mieszczą się wszystkie wartości. Wyliczenie ma więc szerokość i działa też jako soczewka: `ptr.Kanal[5]`,
 - **użycie:** pełna nazwa `Stan.GORACO`, a tam, gdzie typ jest oczywisty (przypisanie do zmiennej typu `Stan`, `case`), wystarczy samo `GORACO`,
 - `switch` na wyliczeniu sprawdza kompletność (sekcja 4).
 
@@ -835,19 +841,11 @@ Typ `text` to blok pamięci przechowujący tekst UTF-8. Opis: sekcja 18.
 
 > **Kolejność bajtów w przykładach:** w całej specyfikacji zawartość pamięci pokazywana jest **w kolejności adresów, od bajtu 0**. Liczba `&0100h` (256) leży więc w pamięci jako `00 01`: bajt 0 = `00` (mniej znaczący), bajt 1 = `01`. Czytając tę samą liczbę jak zapis binarny, od prawej do lewej, widzimy `01 00`. Obie formy opisują te same dane.
 
-> ⚠️ **Literały dziesiętne mają szerokość zależną od wartości.**
-> Z soczewką przyjmują szerokość soczewki (sekcja 10). **Bez soczewki i bez zmiennej** (np. w `.fill` czy `.value =`) zajmują **tyle pełnych bajtów, ile potrzeba dla ich wartości**:
->
-> | Literał | Szerokość |
-> |---|---|
-> | `5`, `255` | 1 bajt |
-> | `256`, `300` | 2 bajty |
-> | `70000` | 3 bajty |
-> | `-1` | 1 bajt (`FF`, zapis ze znakiem) |
-> | `-200` | 2 bajty |
-> | `1.5` (z ułamkiem) | `doublefloat`, 8 bajtów |
->
-> Dlatego `ptr.fill[255]` powtarza wzór 1-bajtowy (bajty od adresu 0: `FF FF ...`), a `ptr.fill[256]` wzór 2-bajtowy (bajty od adresu 0: `00 01 00 01 ...`). Programista musi to wiedzieć. Środowisko programistyczne może pokazywać szerokość literału po najechaniu na niego kursorem.
+**Literał dziesiętny nie ma własnej szerokości.** Przyjmuje typ worka, do którego trafia (zmiennej albo soczewki), i jest liczony na stole jak każda liczba (sekcja 5). Liczba z ułamkiem (`1.5`) to `doublefloat`.
+
+Tam, gdzie nie ma worka, który wyznaczyłby szerokość (np. `ptr.fill[5]` bez soczewki), literał dziesiętny to **błąd kompilacji** z podpowiedzią: `ptr.byte.fill[5]` albo `ptr.fill[&05h]`. Szerokość jest wtedy widoczna w zapisie, a nie ukryta w wartości liczby.
+
+> **Dlaczego literał dziesiętny nie ma szerokości?** Gdyby szerokość wynikała z wartości, `ptr.fill[255]` powtarzałoby wzór 1-bajtowy, a `ptr.fill[256]` wzór 2-bajtowy: zmiana liczby o 1 zmieniałaby wynik całego bloku. Literał szesnastkowy i binarny niesie szerokość w samym zapisie (`&00FFh` to 16 bitów), więc tam nie ma czego zgadywać.
 
 ---
 
@@ -1087,34 +1085,41 @@ ptr.byte[7]       # 7 × byte (1 B)    = bajt 7
 ptr.bit[1]        # 1 × bit           = bit 1
 ```
 
-### Szerokość: wyznacza druga strona
+### Szerokość: wyznacza soczewka
 
-Dotyczy przypisań, porównań i działań. „Druga strona” to strona przeciwna soczewce (soczewka może stać po lewej lub po prawej).
-
-> **Szerokość wyznacza kolejno:** typ zmiennej lub stałej `CONST` → długość bitowa literału szesnastkowego/binarnego → soczewka, która rzutuje literał dziesiętny na swój typ.
-
-1. **Druga strona ma znany typ** (zmienna, stała `CONST`): decyduje jej typ.
-2. **Druga strona ma znaną tylko długość** (literał szesnastkowy lub binarny): liczba bitów wynika z długości literału.
-3. **Druga strona nie mówi nic o szerokości** (literał dziesiętny, np. `0`, `5`, `255`, albo inna soczewka): decyduje typ soczewki.
+**Z3. Soczewka czyta i pisze zawsze swoją szerokość.** `.byte` to zawsze 1 bajt, `.unsigned_16` zawsze 2 bajty, `.Color` zawsze 10 bajtów, bez względu na to, co stoi po drugiej stronie. Odczytana wartość trafia na stół jak każda liczba (sekcja 5), a zapisywana wartość jest dopasowywana do soczewki jak do worka: zawija się albo, z `saturate`, nasyca.
 
 ```
+licznik as int = 300
 d as doublefloat
-licznik as int
 
-d = ptr.byte[1009]                 # 1: odczyt 8 bajtów od bajtu 1009
-ptr.byte[1009] = d                 # 1: zapis 8 bajtów (1009–1016)
-if ptr.byte[5] > licznik then      # 1: odczyt 4 bajtów od bajtu 5
-ptr.byte[7] = &FF0ACh              # 2: zapis 20 bitów od bajtu 7
-ptr.byte[7] = &0111001b            # 2: zapis 7 bitów, ósmy bit bez zmian
-ptr.byte[i] = 0                    # 3: zapis 1 bajtu
-if ptr.int[78] > 5 then            # 3: odczyt 4 bajtów od bajtu 312
-suma = ptr.byte[5] + ptr.byte[6]   # 3: każda soczewka po 1 bajcie
-wynik.Color[0] = obraz.Color[17]   # 3: przeniesienie całego piksela (10 B)
+x as int = ptr.byte[5]             # odczyt 1 bajtu
+ptr.byte[i] = licznik              # zapis 1 bajtu: 300 → 44 (najmłodszy bajt)
+if ptr.byte[5] > licznik then      # odczyt 1 bajtu, porównanie na stole
+ptr.byte[i] = 0                    # zapis 1 bajtu
+if ptr.int[78] > 5 then            # odczyt 4 bajtów od bajtu 312
+suma = ptr.byte[5] + ptr.byte[6]   # każda soczewka po 1 bajcie
+wynik.Color[0] = obraz.Color[17]   # przeniesienie całego piksela (10 B)
 ```
 
-Soczewka służy więc do **ustawienia pozycji**, a druga strona mówi, **ile miejsca zajmują dane**. Dzięki temu można zapisać lub odczytać wartość dowolnego typu od dowolnego miejsca: `ptr.byte[1009] = d`.
+**Z4. Dowolny typ od dowolnego bajtu: `.at`.** Soczewka z `.at[n]` liczy pozycję **w bajtach**, a nie w swoich jednostkach. Tak czyta się i zapisuje wartości leżące w nietypowym miejscu, np. w nagłówkach plików:
 
-**Ostrzeżenie kompilatora:** gdy druga strona jest szersza niż soczewka (np. `int` z soczewką `.byte`), kompilator zgłasza ostrzeżenie, np. „zapis 4 bajtów przez soczewkę 1-bajtową”. Kod działa zgodnie z regułą 1, a ostrzeżenie pomaga wychwycić przypadkowe nadpisanie sąsiednich bajtów. Można je wyłączyć.
+```
+d = ptr.doublefloat.at[1009]       # 8 bajtów od bajtu 1009
+ptr.doublefloat.at[1009] = d       # zapis 8 bajtów (1009–1016)
+ptr.unsigned_32.at[3] = rozmiar    # 4 bajty od bajtu 3
+```
+
+Typ i pozycję widać w zapisie: `ptr.doublefloat.at[1009]` czyta się „liczba `doublefloat` od bajtu 1009”.
+
+**Z5. Jedyny wyjątek: literał szesnastkowy i binarny zapisuje dokładnie tyle bitów, ile ma zapis**, od pozycji wyznaczonej przez soczewkę. Liczbę bitów widać w samym literale:
+
+```
+ptr.byte[7] = &FF0ACh              # 20 bitów od bajtu 7
+ptr.byte[7] = &0111001b            # 7 bitów, ósmy bit bez zmian
+```
+
+> **Dlaczego soczewka zawsze decyduje o szerokości?** Wcześniejsza wersja reguły pozwalała drugiej stronie wyznaczać szerokość: `x as int = ptr.byte[5]` czytało 4 bajty, a `suma = ptr.byte[5] + ptr.byte[6]` po jednym, więc dopisanie `+ 0` zmieniało wynik. Prototyp tłumacza pokazał też, że naturalne `blok.byte[i] = i` zapisywało 8 bajtów. Teraz `.byte` znaczy zawsze jeden bajt, a nietypowy dostęp jest jawny dzięki `.at`.
 
 > Jak to działa w środku: [bemol-wnetrze.md, rozdział 3 (obliczanie pozycji w soczewkach)](bemol-wnetrze.md#3-soczewki-obliczanie-pozycji)
 
@@ -1137,8 +1142,8 @@ x as float
 x = ptr.float[255]             # od bajtu 1020: 3 bajty z bloku + 1 bajt zer
 
 d as doublefloat
-d = ptr.byte[1020]             # od bajtu 1020: 3 bajty z bloku + 5 bajtów zer
-ptr.byte[1020] = d             # zapisane tylko 3 bajty (1020–1022)
+d = ptr.doublefloat.at[1020]   # od bajtu 1020: 3 bajty z bloku + 5 bajtów zer
+ptr.doublefloat.at[1020] = d   # zapisane tylko 3 bajty (1020–1022)
 
 y as float
 y = ptr.float[500]             # od bajtu 2000: całkowicie poza blokiem, same zera
@@ -1169,19 +1174,20 @@ Kompilator zamienia operację blokową na pętlę w kodzie maszynowym, która pr
 
 ### Wypełnianie: `.fill`
 
-`.fill[wartość]` wypełnia blok powtarzanym wzorem. Długość wzoru wyznacza ta sama reguła co wszędzie:
+`.fill[wartość]` wypełnia blok powtarzanym wzorem. Długość wzoru wyznacza soczewka, typ zmiennej albo długość literału szesnastkowego lub binarnego:
 
 ```
 ptr.float.fill[1.5]      # z soczewką: powtarzany float (4 B)
 ptr.fill[kolor]          # zmienna (kolor as Color): powtarzany 10-bajtowy piksel
 ptr.fill[&00FFh]         # literał szesnastkowy: powtarzane 16 bitów
 ptr.fill[&101b]          # literał binarny: powtarzane 3 bity
-ptr.fill[5]              # literał dziesiętny bez soczewki: 1 bajt (sekcja 6)
+ptr.byte.fill[5]         # literał dziesiętny z soczewką: powtarzany 1 bajt
+ptr.fill[5]              # błąd: literał dziesiętny bez soczewki nie ma szerokości (sekcja 6)
 ```
 
 **Wzór jest powtarzany z dokładnością do bitu**, także przez granice bajtów (`&101b` daje `101101101...`). Jeśli długość bloku w bitach nie dzieli się przez długość wzoru, ostatnie powtórzenie jest ucinane, zgodnie z zasadą odłamków.
 
-`.clear` to to samo co `.fill[0]`.
+`.clear` wypełnia cały blok zerami (to samo co `.byte.fill[0]`).
 
 ---
 
@@ -1581,7 +1587,7 @@ _________________________________________________________________
 | Element | Znaczenie |
 |---|---|
 | linia `*****` | początek **błędu** (ostrzeżenie zaczyna się linią `=====`) |
-| `ERROR: BML-E0412` / `WARNING: BML-W0110` | rodzaj i stały kod |
+| `ERROR: BML-E0412` / `WARNING: BML-W0311` | rodzaj i stały kod |
 | nazwa pliku, `at line N, column K` | dokładne miejsce |
 | linia kodu z `^` | fragment, którego dotyczy komunikat |
 | `[ ! ]` | **co** jest źle, jednym zdaniem |
@@ -1593,16 +1599,16 @@ Ostrzeżenie ma tę samą budowę:
 
 ```
 =================================================================
-WARNING: BML-W0110
-tekstura.bmol
-at line 24, column 5
+WARNING: BML-W0311
+kanaly.bmol
+at line 24, column 10
 -----------------------------------------------------------------
-24 |     obraz.byte[n] = licznik
-   |     ^
+24 |     case 5
+   |          ^
 -----------------------------------------------------------------
-  [ ! ] Zapis 4 B przez soczewkę 1-bajtową .byte
-  [ i ] szerokość wyznacza typ zmiennej po drugiej stronie (sekcja 10)
-[ tip ] jeśli chodzi o 1 B, zamień typ jawnie: ... = licznik as byte
+  [ ! ] Gałąź case 5 nigdy się nie wykona
+  [ i ] wartość 5 obsługuje już case 1 to 10 z linii 20 (pierwsza pasująca gałąź wygrywa)
+[ tip ] przenieś case 5 nad case 1 to 10 albo usuń tę gałąź
 _________________________________________________________________
 ```
 
@@ -1691,7 +1697,8 @@ Każda akceptacja jest widoczna dokładnie tam, gdzie zapadła decyzja. Kod z wi
 |---|---|
 | `ptr.value` | cały blok jako jedna liczba (największa soczewka) |
 | `ptr.value = <wartość>` | zapisuje wartość od bajtu 0 |
-| `ptr.<typ>[n]` | element przesunięty o n × rozmiar typu; szerokość według sekcji 10 |
+| `ptr.<typ>[n]` | element przesunięty o n × rozmiar typu; odczyt i zapis zawsze w szerokości typu (sekcja 10) |
+| `ptr.<typ>.at[n]` | wartość typu od bajtu n (pozycja w bajtach) |
 | `ptr.<typ>` | bez indeksu: cały blok jako ciąg elementów (operacje blokowe) |
 | `ptr.<typ>.count` | liczba pełnych elementów typu w bloku |
 | `ptr.<Struktura>[n].pole` | pole struktury w n-tym elemencie, np. `ptr.Color[32].G` |
@@ -1887,7 +1894,7 @@ MAIN BEGIN
 
     obraz.Color[32].G = 500           # pole G w pikselu nr 32 (2 bajty)
     B = obraz.byte[320]               # pierwszy bajt piksela nr 32
-    obraz.byte[1009] = d              # 8 bajtów od bajtu 1009
+    obraz.doublefloat.at[1009] = d    # 8 bajtów od bajtu 1009
 
     # widok na kafelek 64 × 64 od piksela (100, 50), bez kopiowania
     kafelek as pointer

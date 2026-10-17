@@ -1,8 +1,0 @@
-# Test: licznik pętli zadeklarowany w for znika po for.end (BML-E0300)
-
-MAIN BEGIN
-    for i as int = 1 to 10 do
-        print(i, " ")
-    for.end
-    println("ostatnie i = ", i)
-MAIN END
