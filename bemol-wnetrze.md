@@ -361,7 +361,7 @@ W pętli kompilator nie robi tego przy każdym elemencie: sprawdza zakres raz pr
 ## 7. `PERSISTENT` w praktyce
 
 ```
-FUNCTION przetwarzaj(): void
+FUNCTION przetwarzaj()
     PERSISTENT bufor as pointer
     bufor.new[4096]
     ...
