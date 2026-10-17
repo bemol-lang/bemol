@@ -409,7 +409,9 @@ for i = 0 to n-1:
     pamięć_float[adres + i × 4] *= 2     # w środku: zwykły adres, prędkość C
 ```
 
-Adres jest odczytywany ponownie tylko po operacjach, które mogą przenieść blok: `.update` i `.release` (także wywołanych w funkcji wołanej z pętli, jeśli kompilator nie może tego wykluczyć).
+Adres jest odczytywany ponownie tylko po operacjach, które mogą przenieść blok: `.new`, `.update`, `.release`, `.append` i podmianie bloku.
+
+**Wywołania funkcji nie psują tej optymalizacji.** Według specyfikacji (sekcja 3, przekazywanie parametrów) funkcja może zmienić wpis bloku w menedżerze (rozmiar, adres, istnienie) tylko przez parametr `REF`. Po wywołaniu `rozjasnij(obraz)` kompilator wie, że `obraz` leży pod tym samym adresem i ma ten sam rozmiar, więc nie musi niczego odczytywać od nowa. Adres jest odświeżany tylko po wywołaniu z `REF` (`dopisz(REF obraz)`) i po wywołaniu funkcji oznaczonej jako „zmienia bloki globalne” (rozdział 9.5).
 
 ### 9.2. Usuwanie zbędnych zmian `.shares`
 
@@ -436,6 +438,8 @@ Kompilator sprawdza przed pętlą, czy `n × 4 ≤ ptr.size`:
 
 Wynik programu jest w obu przypadkach identyczny, różni się tylko szybkość.
 
+Sprawdzenie przed pętlą pozostaje ważne także wtedy, gdy w pętli wywoływane są funkcje bez `REF`: nie mogą one zmienić `ptr.size` (ta sama zasada co w 9.1).
+
 ### 9.4. Operacje blokowe i SIMD
 
 `ptr.float *= 2` jest zamieniane na pętlę przetwarzającą wiele elementów naraz (np. 8 floatów jedną instrukcją AVX):
@@ -445,6 +449,39 @@ pełne paczki po 8:   instrukcje wektorowe
 reszta (0–7):        pojedynczo
 odłamek na końcu:    ścieżka z rozdziału 6
 ```
+
+### 9.5. Granice ochrony `REF` i `CONST`: ta sama pamięć pod dwiema nazwami
+
+`REF` i `CONST` chronią **nazwę**, a nie blok. Ten sam blok może być dostępny w funkcji pod inną nazwą (po angielsku *aliasing*), a wtedy ochrona parametru go nie obejmuje. Są dwie takie drogi:
+
+**1. Zmienna `GLOBAL` wskazująca ten sam blok:**
+
+```
+GLOBAL bufor as pointer
+
+FUNCTION przelicz(dane as pointer)        # bez REF: nie może zmienić rozmiaru „dane”
+    bufor.update[1000000]                 # ...ale może przez GLOBAL, a to ten sam blok
+przelicz.end
+
+przelicz(bufor)
+```
+
+Kompilator rozwiązuje to tak:
+- każda funkcja, która wykonuje `.new`, `.update`, `.release`, `.append` lub podmianę na zmiennej `GLOBAL` (sama albo przez funkcje, które wywołuje), dostaje cechę **„zmienia bloki globalne”**. Kompilator ustala ją sam, programista nic nie pisze,
+- po wywołaniu takiej funkcji adresy bloków są odczytywane od nowa (9.1), a zakresy sprawdzane od nowa (9.3),
+- przy kompilacjach cząstkowych (rozdział 10) cecha jest zapisana razem z opisem funkcji, więc działa także dla funkcji z innych plików i bibliotek.
+
+**2. Ten sam blok przekazany do dwóch parametrów naraz:**
+
+```
+FUNCTION f(CONST zrodlo as pointer, REF cel as pointer)
+...
+f(obraz, REF obraz)        # zrodlo i cel to ten sam blok
+```
+
+Zapis do `cel` zmienia `zrodlo`, choć jest ono `CONST`, a `cel.release` zwalnia je w trakcie działania funkcji. Kompilator zgłasza **błąd**, gdy ta sama zmienna trafia do dwóch parametrów, z których choć jeden może zmieniać blok (bez znacznika lub `REF`). Dwa parametry `CONST` z tym samym blokiem są dozwolone, bo oba tylko czytają.
+
+**Czego kompilator nie wykryje:** dwóch różnych zmiennych wskazujących ten sam blok (`a = b`, potem `f(a, REF b)`). To wymagałoby śledzenia każdego przypisania w całym programie. W kompilacji testowej menedżer łapie przynajmniej skutek: użycie zwolnionego bloku daje czytelny błąd zamiast cichych śmieci.
 
 ---
 

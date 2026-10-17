@@ -248,28 +248,57 @@ podwoj.end
 **2. Bloki (`pointer`, `text`) są przekazywane wskaźnikiem.** Kopiowany jest tylko 4-bajtowy numer bloku, nigdy dane. Funkcja pracuje na tym samym bloku co wywołujący, więc zmiany danych są widoczne na zewnątrz.
 
 ```
-FUNCTION rozjasnij(obraz as pointer): void
+FUNCTION rozjasnij(obraz as pointer)
     obraz.byte = saturate(obraz.byte + 20)    # zmienia dane wywołującego
 rozjasnij.end
 ```
 
-**3. `CONST` przy parametrze: blok tylko do odczytu.** Każda próba zapisu do takiego bloku w funkcji to błąd kompilacji. Wywołujący ma gwarancję, że funkcja nie zmieni jego danych, a kompilator może śmielej optymalizować.
+**Trzy poziomy uprawnień funkcji do bloku**, każdy z własnym znacznikiem w deklaracji. Zasada: **dane bloku zmienia każda funkcja bez `CONST`; wpis bloku w menedżerze (rozmiar, adres, istnienie) zmienia tylko funkcja z `REF`.**
+
+| Deklaracja | Dane bloku | `.new`, `.update`, `.release`, `.append`, podmiana `=` |
+|---|---|---|
+| `CONST dane as pointer` | tylko odczyt | ✘ |
+| `dane as pointer` | odczyt i zapis | ✘ |
+| `REF dane as pointer` | odczyt i zapis | ✔ |
+
+- **bez znacznika** funkcja pracuje na danych bloku wszystkimi narzędziami, które nie zmieniają jego wpisu w menedżerze (zapis, operacje blokowe, `.fill`, `.clear`, widoki). Operacje zmieniające rozmiar, adres lub istnienie bloku to błąd kompilacji z podpowiedzią „dodaj `REF`”,
+- **`CONST`** to deklaracja intencji: blok jest w tej funkcji tylko dawcą danych. Każda próba zapisu to błąd kompilacji. Wywołujący ma gwarancję, że funkcja nie zmieni jego danych, a kompilator może śmielej optymalizować,
+- **`REF`** świadomie dopuszcza zmianę wpisu w menedżerze, ze wszystkimi skutkami: przy podmianie stary blok dostaje `.shares - 1` (i jest zwalniany, gdy licznik spadnie do 0, a nie patrzą na niego widoki), nowy `.shares + 1`. Sam `REF` liczników nie zmienia: parametr `REF` to inna nazwa tej samej zmiennej wywołującego, a nie druga zmienna.
+
+**`CONST` obowiązuje do końca funkcji, także w funkcjach, które ona wywołuje:**
+
+- blok `CONST` przekazany dalej może trafić tylko do parametru `CONST`. Przekazanie go do parametru bez znacznika albo z `REF` to błąd kompilacji,
+- widok utworzony z bloku `CONST` też jest `CONST`,
+- kopia (`dane.copy`, `copyPortion`, `copyRectangle`) to nowy blok, więc wolno ją zmieniać.
+
+**Ten sam blok w dwóch parametrach naraz** (`f(obraz, REF obraz)`) to błąd kompilacji, gdy choć jeden z tych parametrów może zmieniać blok (bez znacznika lub z `REF`). Inaczej zapis przez jeden parametr zmieniałby drugi, nawet oznaczony `CONST`, a `.release` zwalniałoby go w trakcie działania funkcji. Dwa parametry `CONST` z tym samym blokiem są dozwolone. Ochrona `REF` i `CONST` dotyczy nazwy parametru, a nie bloku: o drodze przez zmienne `GLOBAL` i o tym, czego kompilator nie wykryje, mówi [bemol-wnetrze.md, rozdział 9.5](bemol-wnetrze.md#95-granice-ochrony-ref-i-const-ta-sama-pamięć-pod-dwiema-nazwami).
 
 ```
-FUNCTION suma(CONST dane as pointer): doublefloat
+FUNCTION suma(CONST dane as pointer): longint     # tylko czyta
+FUNCTION rozjasnij(obraz as pointer)              # zmienia dane, rozmiar zostaje
+FUNCTION dopisz(REF lista as pointer)             # może zmienić rozmiar
+FUNCTION zwolnij(REF b as pointer)                # może zwolnić lub podmienić blok
+    b.release
+zwolnij.end
+
+zwolnij(REF obraz)
 ```
 
-**4. `REF`: gdy funkcja ma zmienić zmienną wywołującego.** `REF` jest wymagane **także w miejscu wywołania**:
+> **Dlaczego zmiana rozmiaru wymaga `REF`?** Po wywołaniu funkcji bez `REF` wszystko, co wywołujący wiedział o bloku, pozostaje prawdą: `blok.size` sprzed wywołania jest aktualne, a blok leży pod tym samym adresem. Programista nie dostaje niespodzianek, a kompilator może liczyć adres bloku raz przed pętlą, nawet gdy w pętli wywoływane są funkcje. Każdą zmianę rozmiaru, podmianę czy zwolnienie widać w miejscu wywołania: `dopisz(REF lista)`.
+
+**3. `REF`: gdy funkcja ma zmienić zmienną wywołującego**, czyli wartość zmiennej statycznej albo wpis bloku w menedżerze (rozmiar, podmiana, zwolnienie). `REF` jest wymagane **także w miejscu wywołania**:
 
 ```
-FUNCTION zamien(REF a as int, REF b as int): void
+FUNCTION zamien(REF a as int, REF b as int)
     t as int = a; a = b; b = t
 zamien.end
 
 zamien(REF x, REF y)
 ```
 
-> **Dlaczego `REF` także przy wywołaniu?** W C++ zapis `f(x)` nie mówi, czy `x` się zmieni: trzeba zajrzeć do deklaracji funkcji. W BEMOL-u widać to w miejscu wywołania.
+> **Dlaczego `REF` także przy wywołaniu?** W C++ zapis `f(x)` nie mówi, czy zmienna `x` się zmieni: trzeba zajrzeć do deklaracji funkcji. W BEMOL-u w miejscu wywołania widać każdą zmianę samej zmiennej: nowej wartości liczby albo rozmiaru, podmiany lub zwolnienia bloku. Zmiana *danych* bloku nie wymaga `REF`, bo to zwykła praca funkcji na bloku; o tym, że funkcja danych nie zmieni, informuje `CONST` w jej deklaracji.
+
+**4. Funkcja bez wyniku** nie ma nic po nawiasie (żadnego `: typ`). `return wartość` w takiej funkcji to błąd kompilacji, samo `return` (wcześniejsze wyjście) jest dozwolone.
 
 **5. Kilka wartości zwracanych naraz:**
 
@@ -870,6 +899,14 @@ ptr.new[100*int]
 ptr.clear                  # jawne zerowanie, gdy jest potrzebne
 ```
 
+**Deklaracja z przydziałem w jednej linii**, tak jak `x as int = 5` dla liczb:
+
+```
+blok as pointer.new[1024]          # to samo co: blok as pointer  +  blok.new[1024]
+```
+
+Skrót jest dozwolony tylko w deklaracji i działa dokładnie jak `.new`: rejestruje zmienną i przydziela blok bez zerowania.
+
 ### `.update` — zmiana rozmiaru
 
 Zmienia rozmiar bloku, **zachowując istniejące dane**. **Nowo dodane bajty nie są zerowane**: ich zawartość jest nieokreślona. Po `.release` przydziela nowy blok o nieokreślonej zawartości.
@@ -948,7 +985,7 @@ Wzory nigdy nie są stosowane do plików mapowanych (sekcja 15), bo nadpisałyby
 **Zmienna `PERSISTENT`** ma w menedżerze zarezerwowany wpis, gotowy przy każdym wywołaniu funkcji. Oszczędza to koszt rejestracji w funkcjach wywoływanych bardzo często. **Adres i zawartość bloku nie są gwarantowane** między wywołaniami: trwałe jest miejsce w menedżerze, nie dane. Nazwa nawiązuje do *persistent level* w Unreal Engine: stale obecne jest miejsce, a jego zawartość się zmienia.
 
 ```
-FUNCTION przetwarzaj(): void
+FUNCTION przetwarzaj()
     everyTimeNew as pointer
     PERSISTENT onceAndFast as pointer
 przetwarzaj.end
@@ -1511,7 +1548,7 @@ Standardowo `DEFAULT_RANGE_ERROR = HALT`. Tryb każdego bloku jest zapisany w bi
 ```
 WARNING_HANDLER = mojeOstrzezenia
 
-FUNCTION mojeOstrzezenia(info as pointer): void
+FUNCTION mojeOstrzezenia(info as pointer)
     ...    # np. pokaż w oknie, zapisz do bazy, wyślij na serwer
 mojeOstrzezenia.end
 ```
@@ -1757,7 +1794,7 @@ CLASS Czastka
     .pozycja as float
     .predkosc as float
 
-    FUNCTION .Krok(dt as float): void
+    FUNCTION .Krok(dt as float)
         .pozycja = .pozycja + .predkosc * dt
     Krok.end
 Czastka.end
@@ -1795,10 +1832,10 @@ Kropka łączy właściciela z tym, co do niego należy. Pełna nazwa jest zawsz
 ```
 CLASS Licznik
     .wartosc as int
-    FUNCTION .Zwieksz(): void              # deklaracja
+    FUNCTION .Zwieksz()              # deklaracja
 Licznik.end
 
-FUNCTION Licznik.Zwieksz(): void           # definicja poza klasą, pełna nazwa
+FUNCTION Licznik.Zwieksz()           # definicja poza klasą, pełna nazwa
     .wartosc = .wartosc + 1                # pole tego obiektu (to samo co this.wartosc)
 Zwieksz.end
 ```
@@ -1909,4 +1946,5 @@ potega.end
 - [ ] **Wyjście z kilku zagnieżdżonych pętli naraz.**
 - [ ] **Funkcje biblioteki tekstowej:** wyszukiwanie, wycinanie, zamiana liczb na tekst i odwrotnie, porównanie treści bloków.
 - [ ] **Środowisko programistyczne (BEMOLIZER):** szczegóły interfejsu (sekcja 23).
+- [ ] **`@ACCEPT RUNTIME_ERROR`**: przyjęcie błędu w działającym programie dla jednej instrukcji, ze wszystkimi jego skutkami (np. `dane.byte[i] = x @ACCEPT RUNTIME_ERROR`: zapis poza blok przepada w odłamkach, program idzie dalej, choć blok ma `.rangeError = HALT`). Działa jak `.rangeError = CONTINUE`, ale tylko dla tej jednej instrukcji. Nazwa sama wyklucza błędy kompilacji. Na start tylko wyjście poza blok (E0100), bo ma już określone zachowanie; każdy kolejny błąd wymaga osobnej decyzji, co znaczy „idź dalej” (np. `.release` bloku z widokami, koniec danych w `keyInput`, krok 0 w `for`).
 - [ ] **Blokowanie bloku w pamięci fizycznej** (flaga bloku na wzór `VirtualLock` / `mlock`): przydzielona pamięć może zostać przeniesiona przez system do pliku wymiany; dla zadań czasu rzeczywistego (np. dźwięk na żywo) potrzebna byłaby gwarancja, że blok zawsze zostaje w pamięci RAM.
