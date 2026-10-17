@@ -1,7 +1,7 @@
 # BEMOL ♭ — wnętrze języka
 
 > Jak BEMOL działa „pod spodem”: tablice menedżera, liczenie adresów, optymalizacje kompilatora.
-> Uzupełnienie dokumentu [**bemol-specyfikacja.md**](bemol-specyfikacja.md) · Status: **szkic roboczy** · ostatnia aktualizacja: 2026-10-16
+> Uzupełnienie dokumentu [**bemol-specyfikacja.md**](bemol-specyfikacja.md) · Status: **szkic roboczy** · ostatnia aktualizacja: 2026-10-17
 
 Specyfikacja mówi, **co** programista pisze i co się stanie. Ten dokument mówi, **jak** to działa w środku. Programista BEMOL-a nie musi go znać, żeby pisać programy, ale im lepiej rozumie wnętrze języka, tym lepiej rozumie narzędzie, którym pracuje: wie, dlaczego `unsigned_16` jest szybsze od `unsigned_12`, ile kosztuje widok i dlaczego bloku z widokami nie da się zwolnić.
 

@@ -1,0 +1,7 @@
+# Test: liczba dziesiętna jako wzór .fill bez soczewki (BML-E0387)
+
+MAIN BEGIN
+    blok as pointer
+    blok.new[16]
+    blok.fill[256]
+MAIN END

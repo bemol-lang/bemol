@@ -1,0 +1,10 @@
+# Test: ten sam blok w dwóch parametrach naraz (BML-E0423)
+
+MAIN BEGIN
+    obraz as pointer.new[16]
+    kopiuj(obraz, REF obraz)
+MAIN END
+
+FUNCTION kopiuj(CONST zrodlo as pointer, REF cel as pointer)
+    cel.update[zrodlo.size]
+kopiuj.end

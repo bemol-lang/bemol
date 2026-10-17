@@ -1,0 +1,6 @@
+# Test: literał bez znacznika systemu liczbowego (BML-E0012)
+
+MAIN BEGIN
+    dane as pointer.new[16]
+    dane.fill[&FF]
+MAIN END

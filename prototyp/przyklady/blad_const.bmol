@@ -1,0 +1,11 @@
+# Test komunikatu błędu kompilacji: zapis do bloku przekazanego jako CONST (BML-E0305)
+
+MAIN BEGIN
+    dane as pointer
+    dane.new[16]
+    zeruj(dane)
+MAIN END
+
+FUNCTION zeruj(CONST d as pointer)
+    d.byte[0] = 0
+zeruj.end

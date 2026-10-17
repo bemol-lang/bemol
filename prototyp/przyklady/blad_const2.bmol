@@ -1,0 +1,14 @@
+# Test: blok CONST przekazany do funkcji, która może go zmieniać (BML-E0422)
+
+MAIN BEGIN
+    dane as pointer.new[16]
+    pokaz(dane)
+MAIN END
+
+FUNCTION pokaz(CONST dane as pointer)
+    wyczysc(dane)
+pokaz.end
+
+FUNCTION wyczysc(d as pointer)
+    d.clear
+wyczysc.end

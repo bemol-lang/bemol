@@ -4,7 +4,7 @@
 > Repozytorium: `github.com/bemol-lang/bemol` · rozszerzenie plików: `.bmol`
 > Jak język działa w środku: [**bemol-wnetrze.md**](bemol-wnetrze.md)
 > Prototyp tłumacza BEMOL → C: folder [`prototyp/`](prototyp/README.md)
-> Status: **szkic roboczy** · ostatnia aktualizacja: 2026-10-16
+> Status: **szkic roboczy** · ostatnia aktualizacja: 2026-10-17
 
 BEMOL to kompilowany język do szybkiego przetwarzania dużych bloków danych. Daje dostęp do pamięci z precyzją asemblera (każdy bajt, każdy bit), ale z czytelną składnią i automatycznym zarządzaniem pamięcią.
 

@@ -1,0 +1,8 @@
+# Test komunikatu błędu kompilacji: przypisanie w warunku (BML-E0221)
+
+MAIN BEGIN
+    x as int = 3
+    if x = 5 then
+        println("pięć")
+    if.end
+MAIN END

@@ -1,0 +1,10 @@
+# Test: zmiana rozmiaru bloku w funkcji bez REF (BML-E0420)
+
+MAIN BEGIN
+    dane as pointer.new[16]
+    powieksz(dane)
+MAIN END
+
+FUNCTION powieksz(dane as pointer)
+    dane.update[32]
+powieksz.end

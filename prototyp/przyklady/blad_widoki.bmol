@@ -1,0 +1,9 @@
+# Test komunikatu błędu w działającym programie:
+# zwolnienie bloku, na który patrzy widok (BML-E0412)
+
+MAIN BEGIN
+    obraz as pointer
+    obraz.new[100]
+    kafelek as pointer = obraz.viewPortion[10:20]
+    obraz.release
+MAIN END

@@ -1,0 +1,10 @@
+# Test: zamknięcie funkcji cudzą nazwą po skopiowaniu kodu (BML-E0025)
+
+MAIN BEGIN
+    dane as pointer.new[16]
+    zmien(dane)
+MAIN END
+
+FUNCTION zmien(dane as pointer)
+    dane.fill[&FFh]
+zmienREF.end

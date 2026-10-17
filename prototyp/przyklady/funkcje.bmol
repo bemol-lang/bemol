@@ -1,0 +1,47 @@
+# Uprawnienia funkcji do bloku: CONST, bez znacznika, REF (specyfikacja, sekcja 3)
+
+MAIN BEGIN
+    obraz as pointer.new[8]                # deklaracja z przydziałem w jednej linii
+    obraz.byte.fill[10]
+
+    println("suma (CONST)       = ", suma(obraz), "   (oczekiwane 80)")
+
+    rozjasnij(obraz)                       # zmienia dane, bez REF
+    println("po rozjasnij       =", obraz : hex)
+
+    dopisz(REF obraz, 4)                   # zmienia rozmiar: REF
+    println("po dopisz(REF)     = ", obraz, "   (oczekiwane 12 B)")
+
+    stary as pointer = obraz               # drugi trzymający: shares 2
+    podmien(REF obraz)
+    println("po podmien(REF)    = ", obraz, "   (nowy blok 3 B)")
+    println("stary blok         = ", stary, "   (shares 1: podmiana zabrała jeden)")
+
+    zwolnij(REF stary)
+    println("po zwolnij(REF)    = ", stary, "   (0 B)")
+MAIN END
+
+FUNCTION suma(CONST dane as pointer): longint
+    s as longint = 0
+    foreach b in dane.byte do
+        s += b
+    foreach.end
+    return s
+suma.end
+
+FUNCTION rozjasnij(dane as pointer)
+    dane.byte = saturate(dane.byte + 250)
+rozjasnij.end
+
+FUNCTION dopisz(REF dane as pointer, ile as int)
+    dane.update[dane.size + ile]
+dopisz.end
+
+FUNCTION podmien(REF dane as pointer)
+    nowy as pointer.new[3]
+    dane = nowy
+podmien.end
+
+FUNCTION zwolnij(REF b as pointer)
+    b.release
+zwolnij.end
